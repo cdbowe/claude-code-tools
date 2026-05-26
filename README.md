@@ -198,6 +198,7 @@ Estimates subscription usage percentage by scanning all `.jsonl` transcript file
 - Historical usage data logging for coefficient calibration
 
 **Note about the OAuth API usage fetch + cooldown**: 
+
 The script was built with a cooldown timer in mind to prevent sending API fetch requests too frequently. I was hitting rate limit errors in my script, so I added this cooldown feature to find a balance in refreshes.
 
 **Modes**: `--statusline` (minimal output for status bar), `--debug` (verbose), `--enable-oauth-api` (fetch actual usage from Anthropic).
