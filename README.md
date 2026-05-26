@@ -197,6 +197,8 @@ Estimates subscription usage percentage by scanning all `.jsonl` transcript file
 - Session window management (shared state across all Claude Code instances)
 - Historical usage data logging for coefficient calibration
 
+**Note about the OAuth API usage fetch + cooldown**: the script was built with a cooldown timer in mind to prevent sending API fetch requests too frequently. I was hitting rate limit errors in my script, so I added this cooldown feature to find a balance in refreshes.
+
 **Modes**: `--statusline` (minimal output for status bar), `--debug` (verbose), `--enable-oauth-api` (fetch actual usage from Anthropic).
 
 ### Tuning the Usage Estimator
@@ -231,10 +233,11 @@ usage_pct = total / SESSION_CREDIT_LIMIT × 100
 | `CACHE_READ_COEFF` | `0.0` | Multiplier for cache reads | If Anthropic starts charging for cache reads |
 | `CALIBRATION_MULTIPLIER` | `1.0` | Global multiplier on raw credits | Estimated consistently low across all models |
 | `TOTAL_CREDITS_OFFSET` | `0` | Additive offset on final credits | Fixed overhead not captured by tokens |
+| `API_CALL_COOLDOWN_DURATION` | `600` | The cooldown period between each API usage fetch request | When you need slightly more frequent updates. Adjust only as necessary; fetching too frequently can hit rate limits on usage status |
 
 **Calibration workflow**:
 
-1. **Enable OAuth API** — pass `--enable-oauth-api` (or set `ENABLE_OAUTH_API=true` in `statusline_script.sh`). This fetches your actual usage percentage from `api.anthropic.com/api/oauth/usage` every 10 minutes.
+1. **Enable OAuth API** — pass `--enable-oauth-api` (or set `ENABLE_OAUTH_API=true` in `statusline_script.sh`). This fetches your actual usage percentage from `api.anthropic.com/api/oauth/usage`, with a 10-minute cooldown before the next fetch.
 
 2. **Compare estimated vs actual** — the status line shows both side by side. Run `./est_claude_usage.sh --enable-oauth-api` standalone for a detailed breakdown with the diff.
 
