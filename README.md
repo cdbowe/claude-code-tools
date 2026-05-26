@@ -235,7 +235,7 @@ usage_pct = total / SESSION_CREDIT_LIMIT × 100
 | `CACHE_READ_COEFF` | `0.0` | Multiplier for cache reads | If Anthropic starts charging for cache reads |
 | `CALIBRATION_MULTIPLIER` | `1.0` | Global multiplier on raw credits | Estimated consistently low across all models |
 | `TOTAL_CREDITS_OFFSET` | `0` | Additive offset on final credits | Fixed overhead not captured by tokens |
-| `API_CALL_COOLDOWN_DURATION` | `600` | The cooldown period between each API usage fetch request | When you need slightly more frequent updates. Adjust only as necessary; fetching too frequently can hit rate limits on usage status |
+| `API_CALL_COOLDOWN_DURATION` | `600` | The cooldown period between each API usage fetch request, in seconds | When you need slightly more frequent updates. Adjust only as necessary; fetching too frequently can hit rate limits on usage status |
 
 **Calibration workflow**:
 
