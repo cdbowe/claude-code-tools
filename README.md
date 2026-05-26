@@ -199,6 +199,53 @@ Estimates subscription usage percentage by scanning all `.jsonl` transcript file
 
 **Modes**: `--statusline` (minimal output for status bar), `--debug` (verbose), `--enable-oauth-api` (fetch actual usage from Anthropic).
 
+### Tuning the Usage Estimator
+
+Anthropic doesn't publish how subscription credits are calculated, so the estimator uses reverse-engineered coefficients. You'll likely need to calibrate these for your plan and usage patterns.
+
+**The formula** (per model):
+
+```
+credits = (input + cw_5m × CW_5M_COEFF + cw_1h × CW_1H_COEFF) × INPUT_COEFF
+        + output × OUTPUT_COEFF
+        + cache_read × CR_COEFF × INPUT_COEFF
+        + compaction × COMPACTION_COEFF
+
+total = (opus_credits + sonnet_credits + haiku_credits) × CALIBRATION_MULTIPLIER + TOTAL_CREDITS_OFFSET
+usage_pct = total / SESSION_CREDIT_LIMIT × 100
+```
+
+**What to tune and when**:
+
+| Variable | Default | What it controls | When to change |
+|----------|---------|------------------|----------------|
+| `SESSION_CREDIT_LIMIT` | `6000000` | Total credits per 5-hour window | Different plan tier (Pro vs Max 5x vs Max 20x) |
+| `OPUS_INPUT_CREDIT_COEFF` | `0.833333` | Credits per input token (Opus) | Estimated consistently over/under actual |
+| `OPUS_OUTPUT_CREDIT_COEFF` | `4.166667` | Credits per output token (Opus) | Output-heavy sessions diverge from actual |
+| `SONNET_INPUT_CREDIT_COEFF` | `0.50` | Credits per input token (Sonnet) | Subagent-heavy workflows (Sonnet-dominated) |
+| `SONNET_OUTPUT_CREDIT_COEFF` | `2.5` | Credits per output token (Sonnet) | Same as above |
+| `HAIKU_INPUT_CREDIT_COEFF` | `0.166667` | Credits per input token (Haiku) | Haiku-heavy workflows |
+| `HAIKU_OUTPUT_CREDIT_COEFF` | `0.833333` | Credits per output token (Haiku) | Same as above |
+| `CACHE_WRITE_5M_COEFF` | `1.25` | Multiplier for 5-min cache writes | Cache-heavy sessions diverge |
+| `CACHE_WRITE_1H_COEFF` | `2.0` | Multiplier for 1-hour cache writes | Same as above |
+| `CACHE_READ_COEFF` | `0.0` | Multiplier for cache reads | If Anthropic starts charging for cache reads |
+| `CALIBRATION_MULTIPLIER` | `1.0` | Global multiplier on raw credits | Estimated consistently low across all models |
+| `TOTAL_CREDITS_OFFSET` | `0` | Additive offset on final credits | Fixed overhead not captured by tokens |
+
+**Calibration workflow**:
+
+1. **Enable OAuth API** — pass `--enable-oauth-api` (or set `ENABLE_OAUTH_API=true` in `statusline_script.sh`). This fetches your actual usage percentage from `api.anthropic.com/api/oauth/usage` every 10 minutes.
+
+2. **Compare estimated vs actual** — the status line shows both side by side. Run `./est_claude_usage.sh --enable-oauth-api` standalone for a detailed breakdown with the diff.
+
+3. **Check the data log** — every fresh API call with `actual > 0%` appends a row to `usage-data-log.txt` (pipe-delimited) with all token counts, coefficients, and both percentages. Use this to spot systematic drift.
+
+4. **Adjust coefficients** — if estimated consistently reads higher than actual, decrease the relevant coefficients (or `CALIBRATION_MULTIPLIER` for a global fix). If lower, increase them. The commented-out values in the script show previous calibration attempts.
+
+5. **Re-run** — changes take effect on the next status line update (no restart needed).
+
+**Key insight**: Subscription credit accounting differs from API billing. Cache writes are charged at `1×`/`2×` input price (not the `1.25×`/`2×` API rate), and cache reads appear to be **free** for subscriptions (`CACHE_READ_COEFF=0.0`). These differences were discovered through the calibration loop above.
+
 ## Settings
 
 ### Permission Model
