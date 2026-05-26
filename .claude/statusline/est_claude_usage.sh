@@ -35,7 +35,7 @@ SESSION_TIME_WINDOW_SIZE_HOURS=$(($SESSION_TIME_WINDOW_SIZE / 60 / 60)) # Sessio
 # Pro:       $X/session
 # Max 5x:    $(X*5)/session (Pro*5)
 # Max 20x:   $(X*20)/session (Pro*20)
-ESTIMATED_LIMIT=60  # dollars per 5-hour session
+# ESTIMATED_LIMIT=60  # dollars per 5-hour session
 
 # Pricing multipliers (per million tokens) - adjust these to calibrate estimation
 # Official API pricing: https://platform.claude.com/docs/en/about-claude/pricing
@@ -830,12 +830,12 @@ calculate_costs() {
     TOTAL_COST=$(echo "scale=6; $OPUS_COST + $SONNET_COST + $HAIKU_COST + $WEB_SEARCH_COST" | bc)
 }
 
-calculate_usage_percent() {
-    local total_cost=$1
-    local estimated_limit=$2
+# calculate_usage_percent() {
+#     local total_cost=$1
+#     local estimated_limit=$2
 
-    printf "%.1f" "$(echo "scale=1; $TOTAL_COST * 100 / $ESTIMATED_LIMIT" | bc)"
-}
+#     printf "%.1f" "$(echo "scale=1; $total_cost * 100 / $estimated_limit" | bc)"
+# }
 
 calculate_credits() {
     # Credits formula: (input + cw_5m × cw_5m_coeff + cw_1h × cw_1h_coeff) × in_coeff + output × out_coeff + cr × cr_coeff × in_coeff
