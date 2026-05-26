@@ -1,0 +1,162 @@
+{
+  "env": {
+    "DISABLE_AUTOUPDATER": "1",
+    "ENABLE_TOOL_SEARCH": "true",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "95",
+    "ANTHROPIC_MODEL": "claude-opus-4-6[1m]",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6[1m]",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION": "claude-opus-4-6[1m]",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": "Opus 4.6 [1M] [CUSTOM]",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION": "[CUSTOM] Opus 4.6 (1M Context) - Pinned"
+  },
+  "permissions": {
+    "allow": [
+      "Write",
+      "WebFetch",
+      "WebSearch",
+      "Search",
+      "KillShell",
+      "Bash(npm install:*)",
+      "Bash(echo:*)",
+      "Bash(sed:*)",
+      "Bash(mv:*)",
+      "Bash(grep:*)",
+      "Bash(glob:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(cat:*)",
+      "Bash(cat /tmp/:*)",
+      "Bash(find:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(sed -i 's/model: haiku/model: $\\(echo $HAIKU_MODEL\\)/g' /tmp/claude-shared/commands/prd.md)",
+      "Bash(sed -i 's/model: sonnet/model: $\\(echo $SONNET_MODEL\\)/g' /tmp/claude-shared/commands/prd.md)",
+      "Bash(sed -i 's/model: opus/model: $\\(echo $OPUS_MODEL\\)/g' /tmp/claude-shared/commands/prd.md)",
+      "mcp__ide__getDiagnostics",
+      "mcp__serena__list_dir",
+      "mcp__serena__find_file",
+      "mcp__serena__search_for_pattern",
+      "mcp__serena__get_symbols_overview",
+      "mcp__serena__find_symbol",
+      "mcp__serena__find_referencing_symbols",
+      "mcp__serena__list_memories",
+      "mcp__serena__read_memory",
+      "mcp__serena__write_memory",
+      "mcp__serena__edit_memory",
+      "mcp__serena__insert_after_symbol",
+      "mcp__serena__check_onboarding_performed",
+      "mcp__serena__think_about_collected_information",
+      "mcp__serena__think_about_task_adherence",
+      "mcp__serena__think_about_whether_you_are_done",
+      "mcp__serena__initial_instructions"
+    ],
+    "deny": [
+      "Read(**/.env*)",
+      "Read(**/appsettings.*.json)",
+      "Read(**/Web.*.config)",
+      "Read(**/App.*.config)",
+      "Bash(sudo:*)",
+      "Bash(chmod:*)",
+      "Bash(chown:*)",
+      "Bash(groupmod:*)",
+      "Bash(usermod:*)",
+      "Bash(git push:*)",
+      "Bash(git remote:*)",
+      "Bash(git origin:*)",
+      "Bash(yarn:*)",
+      "Bash(pnpm:*)",
+      "Bash(nvm:*)",
+      "NotebookEdit"
+    ],
+    "ask": [
+      "Bash(rm:*)",
+      "Bash(rmdir:*)"
+    ],
+    "defaultMode": "default"
+  },
+  "enabledPlugins": {},
+  "spinnerTipsEnabled": false,
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/backup-conversation.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '\"[\" + (now | strftime(\"%Y-%m-%d %H:%M:%S\")) + \"] \" + .hook_event_name + \": \" + (. | @json)' >> $CLAUDE_PROJECT_DIR/.claude/hooks-log.txt"
+          }
+        ]
+      },
+      {
+        "matcher": "^/prd(-v2)?\\s+plan(\\s|$)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/prd-plan-inject.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '\"[\" + (now | strftime(\"%Y-%m-%d %H:%M:%S\")) + \"] \" + .tool_name + \": \" + (. | @json)' >> $CLAUDE_PROJECT_DIR/.claude/skill-log.txt"
+          }
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/skill-dispatcher.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/validate-prd-json.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/commands/scripts/check-main.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "$CLAUDE_PROJECT_DIR/.claude/statusline/statusline_script.sh --usage-script \"$CLAUDE_PROJECT_DIR/.claude/statusline/est_claude_usage.sh\""
+  },
+  "effortLevel": "medium",
+  "promptSuggestionEnabled": false,
+  "skipDangerousModePermissionPrompt": true,
+  "autoCompactEnabled": false,
+  "remoteControlAtStartup": false,
+  "voiceEnabled": false
+}
