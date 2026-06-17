@@ -421,7 +421,20 @@ If NO PHASE_NUM provided:
 
 1. Check ACTIVE_PRD and CURRENT_PHASE. If missing: Output error — STOP
 
-2. Build agent prompt:
+2. **Try fast plan first** (no agent needed for verify-retry cases):
+   ```bash
+   bash !`echo $WORKSPACE_DIR/.claude/commands/prd/scripts`/prd-unblock-fast-plan.sh
+   ```
+   Parse JSON output:
+
+   | `status` | Action |
+   |----------|--------|
+   | `fast_plan` | Plan generated — skip to step 6 (validate) |
+   | `none` | Output "No blocked tasks in phase" — STOP |
+   | `needs_agent` | Continue to step 3 (spawn agent) |
+   | `error` | Output error — STOP |
+
+3. Build agent prompt:
    - If UNBLOCK_PROMPT provided: Include as guidance section in prompt
    - Write prompt to `/tmp/.prd_unblock_prompt.txt`:
      ```
@@ -434,14 +447,13 @@ If NO PHASE_NUM provided:
      Use this guidance to inform your investigation approach and ensure the unblock plan addresses the user's concerns.
      ```
 
-3. Spawn agent (capture JSON output):
+4. Spawn agent (capture JSON output):
    ```
    Task(subagent_type: "prd-unblock", model: claude-sonnet-4-5-20250929, prompt: "Read instructions from /tmp/.prd_unblock_prompt.txt")
    ```
 
-4. Parse JSON. If `status == "error"`: Output error and STOP
-
-5. If `blockedCount == 0`: Output "No blocked tasks in phase" — STOP
+5. Parse JSON. If `status == "error"`: Output error and STOP
+   If `blockedCount == 0`: Output "No blocked tasks in phase" — STOP
 
 6. Validate: `!`echo $WORKSPACE_DIR/.claude/commands/prd/scripts`/prd-validate-unblock-plan.sh /tmp/.prd_unblock_plan.json`
 
@@ -462,17 +474,25 @@ If PHASE_NUM is provided (e.g., `/prd unblock 3`), run combined `read` → `plan
       - If awaiting selection: Output `Ambiguous phase number. Multiple matches found.` — STOP
       - Output read stdout to transcript
 
-   b. **Build agent prompt** (same as `plan-unblock`):
-      - If UNBLOCK_PROMPT provided: Include as guidance section in prompt
-      - Write prompt to `/tmp/.prd_unblock_prompt.txt`
+   b. **Try fast plan first** (same as `plan-unblock` step 2):
+      ```bash
+      bash !`echo $WORKSPACE_DIR/.claude/commands/prd/scripts`/prd-unblock-fast-plan.sh
+      ```
+      - If `status == "fast_plan"`: Skip to validate below
+      - If `status == "none"`: Output "No blocked tasks in phase" — STOP
+      - If `status == "error"`: Output error — STOP
+      - If `status == "needs_agent"`: Continue to step c
 
-   c. **Run plan-unblock**: Spawn prd-unblock agent
-      ```
-      Task(subagent_type: "prd-unblock", model: claude-sonnet-4-5-20250929, prompt: "Read instructions from /tmp/.prd_unblock_prompt.txt")
-      ```
-      - Agent writes to `/tmp/.prd_unblock_plan.json`
+   c. **Run plan-unblock** (only if fast plan returned `needs_agent`):
+      - Build agent prompt (same as `plan-unblock` step 3)
+      - Spawn prd-unblock agent:
+        ```
+        Task(subagent_type: "prd-unblock", model: claude-sonnet-4-5-20250929, prompt: "Read instructions from /tmp/.prd_unblock_prompt.txt")
+        ```
       - Parse JSON. If `status == "error"`: Output error and STOP
       - If `blockedCount == 0`: Output "No blocked tasks in phase" — STOP
+
+   d. **Validate and display plan**:
       - Validate: `!`echo $WORKSPACE_DIR/.claude/commands/prd/scripts`/prd-validate-unblock-plan.sh /tmp/.prd_unblock_plan.json`
       - Run display: `!`echo $WORKSPACE_DIR/.claude/commands/prd/scripts`/prd-display.sh plan-unblock /tmp/.prd_unblock_plan.json`
       - Output plan display stdout to transcript

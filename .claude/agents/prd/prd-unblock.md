@@ -25,6 +25,16 @@ Investigates blocked/unclear tasks and generates resolution tasks. The compile s
 
 ---
 
+## Scope Constraints
+
+- **Total investigation budget**: MAX 15 tool calls for the entire agent run (excluding file writes for output)
+- **Per-task budget**: MAX 5 tool calls per blocked task
+- **No speculative exploration**: Only investigate what's needed to determine the resolution approach
+- **Trust persisted diagnostics**: `blockReason` and `blockDetails` were captured from the original failure — use them directly
+- **Fail fast on ambiguity**: If the blocker is unclear after budget is exhausted, use `AskUserQuestion` once. If still unclear, create a RETRY task with sonnet and let the worker investigate during execution.
+
+---
+
 ## Steps
 
 ### 1. Load instructions and state
@@ -57,21 +67,56 @@ If no blocked/skipped tasks found, output:
 {"status":"complete","blockedCount":0,"message":"No blocked or skipped tasks in phase"}
 ```
 
+### 2b. Classify blocked tasks
+
+For each blocked task, check these fields from the phase JSON:
+- `blockReason` — why the task failed (string, may be null)
+- `blockDetails` — diagnostic context from the worker that failed (object, may be absent)
+  - `blockDetails.workerNotes` — worker's summary of what happened
+  - `blockDetails.filesAttempted` — files the worker tried to create/modify
+  - `blockDetails.model` — model that was used for the failed attempt
+  - `blockDetails.capturedAt` — ISO timestamp when diagnostics were captured
+  - `blockDetails.phase` — phase number when diagnostics were captured
+
+**Freshness check**: If `blockDetails.phase` matches the current phase, trust the diagnostics. If it doesn't match (stale from a different phase), treat as **unknown-blocker** and re-investigate.
+
+Classify each task (**check in this order** — first match wins):
+
+| Condition | Classification | Action |
+|-----------|---------------|--------|
+| `taskType == "verify"` AND all `dependsOn` tasks are `Complete` | **verify-retry** | Skip to step 5 (single RETRY task, no UNBLOCK needed) |
+| `taskType == "verify"` AND some `dependsOn` are NOT `Complete` | **known-blocker** | The missing deps are the blocker, not the verify command itself |
+| `blockReason` is present AND `blockDetails.phase` matches current phase | **known-blocker** | Trust blockReason + blockDetails, minimal investigation (step 3) |
+| `blockReason` is present BUT `blockDetails.phase` differs or is absent | **unknown-blocker** | Stale diagnostics — re-investigate (step 3) |
+| `blockReason` is null/empty | **unknown-blocker** | Investigate (step 3) |
+
+**verify-retry fast path (MANDATORY)**: When a verify task has all dependencies Complete, it is ALWAYS classified as verify-retry. Do NOT investigate the blockReason to find pre-fixes — the worker will discover and fix issues during its run-fix-rerun loop. Create a single `RETRY-X.Y` task with `taskType: "verify-retry"`. No `UNBLOCK-X.Y` task is needed.
+
 ### 3. Analyze each blocked task
 
-For each blocked task, investigate the `blockReason` and gather context:
+**Investigation budget**: MAX 5 tool calls per blocked task. Stop investigating as soon as you can determine the resolution approach.
 
-| Investigation | Purpose | Tool |
-|---------------|---------|------|
-| Read blockReason | Understand stated blocker | Phase JSON |
-| Check dependsOn | Find incomplete dependencies | Phase JSON |
-| Analyze targetFiles | Check if files exist, find issues | `Glob`, `Read` |
-| Search for symbols | Find missing interfaces/classes | Serena tools |
-| Check related code | Understand implementation context | `Grep`, `Read` |
+| Blocker Classification | Investigation | Budget |
+|------------------------|---------------|--------|
+| **verify-retry** | None — skip directly to step 5 | 0 calls |
+| **known-blocker** | Read `blockReason` + `blockDetails`, optionally verify 1 target file exists | 1-2 calls max |
+| **unknown-blocker** | Targeted investigation (see below) | up to 5 calls |
+
+**known-blocker**: The `blockReason` and `blockDetails` fields contain the failure diagnostics from the previous build attempt. Use them to determine the resolution approach directly. Do NOT re-run the same investigation the worker already performed.
+
+**unknown-blocker** investigation (only when blockReason is null/empty):
+
+| Step | Purpose | Tool |
+|------|---------|------|
+| 1. Check dependsOn statuses | Find incomplete dependencies | Phase JSON (already loaded) |
+| 2. Check if targetFiles exist | Identify missing files | `Glob` or `Bash ls` |
+| 3. If missing file found | That's the blocker — stop investigating | — |
+| 4. If files exist but unclear | Read the most relevant file | `Read` (1 file only) |
+| 5. If still unclear | Ask user | `AskUserQuestion` |
 
 ### 4. Determine resolution approach
 
-For each blocked task, determine what's needed to unblock:
+For each blocked task (non-verify), determine what's needed to unblock:
 
 | Blocker Type | Resolution |
 |--------------|------------|
@@ -90,7 +135,12 @@ Create a flat list of resolution tasks with dependencies. The compile script han
 | `UNBLOCK-X.Y` | Creates missing dependency for task X.Y |
 | `RETRY-X.Y` | Re-attempts blocked task X.Y after dependencies exist |
 
-**Dependency rules:**
+**verify-retry tasks**: For tasks classified as **verify-retry** in step 2b, create a single `RETRY-X.Y` with:
+- `dependsOn: []` (no UNBLOCK needed — deps already satisfied)
+- `resolution`: Include the original task's `description` (contains the verification command) and `blockReason` (contains failure details). Instruct the worker to: run the command, analyze failures, fix code, re-run (up to 3 fix iterations), mark blocked only if still failing after 3 attempts.
+- `taskType`: `"verify-retry"`
+
+**Dependency rules (non-verify)**:
 - Tasks with no dependencies: `dependsOn: []`
 - Tasks depending on another resolution: `dependsOn: ["UNBLOCK-X.Y"]`
 - RETRY tasks typically depend on their UNBLOCK tasks
@@ -100,8 +150,9 @@ Create a flat list of resolution tasks with dependencies. The compile script han
 | Resolution Type | Model |
 |-----------------|-------|
 | Create new file (complex logic) | sonnet |
-| Create new file (simple/boilerplate) | haiku |
-| Fix existing file | haiku |
+| Create new file (simple/boilerplate) | sonnet |
+| Fix existing file | sonnet |
+| Verify-retry | sonnet |
 | Clarification follow-up | haiku |
 
 ### 7. Write `/tmp/.prd_unblock_plan.json` using Bash heredoc

@@ -39,6 +39,7 @@ Reviews a single phase JSON for execution-blocking issues only. Optimized for co
 | No acceptance criteria | MEDIUM | acceptanceCriteria missing/empty |
 | Blocked status without blockReason | MEDIUM | taskStatus="Blocked" but no reason |
 | Description is single word or empty | MEDIUM | ≤1 word in description |
+| **Missing test CLI command** | **MEDIUM** | **Task has postValidation, steps referencing "run tests"/"verify tests pass", or taskType "verify"/"generate-test", but no explicit CLI command (e.g., `dotnet test`, `npm test`, `vitest`)** |
 
 ### Missing Dependency Detection (CRITICAL)
 
@@ -74,6 +75,25 @@ FOR each task T in phase:
 - Method/class names mentioned: "UpdateSearchScenario", "CreateMockResponse", "BaseE2ETest"
 - File references: "use the helper from ...", "calls methods in ..."
 - Explicit task refs: "task 3.1", "created in 3.2"
+
+### Test Command Detection (CRITICAL)
+
+Tasks that involve running tests MUST specify an explicit CLI command. Workers cannot reliably infer the correct test runner, project, or flags for a given workspace.
+
+**Detection:** Flag when ANY of these are true AND no explicit CLI command is present in the task's `postValidation`, `steps`, or `acceptanceCriteria`:
+
+| Signal | Example |
+|--------|---------|
+| `postValidation` exists with test-related checks | `"verifyTestsPassing": true` |
+| Steps mention running/executing tests | "Run unit tests", "Verify tests pass", "Execute test suite" |
+| `taskType` is `"verify"` or `"generate-test"` | Any verify or test-generation task |
+
+**What counts as an explicit CLI command:** A concrete, runnable command string — e.g., `dotnet test BankJet.Data.Tests`, `npm run test`, `vitest run src/`. Generic phrases like "run tests" or "verify tests pass" do NOT count.
+
+**recommendedFix format:**
+```
+Add explicit test CLI command to task [taskId] postValidation or steps. Current description references running tests but does not specify which command to use. User must confirm the correct command for this workspace.
+```
 
 ### Infrastructure-Specific Checks (when `isInfrastructure: true`)
 
@@ -335,6 +355,7 @@ Check ONLY the items in the bounded rubric above. For each finding:
 | No acceptance criteria | missing | medium | Yes | add_acceptance_criteria |
 | Blocked without blockReason | missing | medium | Yes | add_block_reason |
 | Description empty or single word | clarification | medium | No | - |
+| Missing test CLI command | missing | medium | No | - |
 
 **STOP here. Do NOT check anything else.**
 

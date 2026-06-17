@@ -167,7 +167,7 @@ if [ "$all_complete" = true ]; then
         # Update task status to Complete and remove blockReason
         jq --arg tid "$tid" \
             '(.tasks[] | select(.taskId == $tid)).taskStatus = "Complete" |
-             (.tasks[] | select(.taskId == $tid)) |= del(.blockReason)' \
+             (.tasks[] | select(.taskId == $tid)) |= del(.blockReason, .blockDetails)' \
             "$phase_file" > "${phase_file}.tmp" && mv "${phase_file}.tmp" "$phase_file"
     done
 else
@@ -197,10 +197,44 @@ else
             resolved_tasks=$(echo "$resolved_tasks" | jq --arg tid "$tid" '. + [$tid]')
             jq --arg tid "$tid" \
                 '(.tasks[] | select(.taskId == $tid)).taskStatus = "Complete" |
-                 (.tasks[] | select(.taskId == $tid)) |= del(.blockReason)' \
+                 (.tasks[] | select(.taskId == $tid)) |= del(.blockReason, .blockDetails)' \
                 "$phase_file" > "${phase_file}.tmp" && mv "${phase_file}.tmp" "$phase_file"
         else
             still_blocked_tasks=$(echo "$still_blocked_tasks" | jq --arg tid "$tid" '. + [$tid]')
+
+            # Update blockReason/blockDetails with latest failure info from RETRY worker
+            for ((i=0; i<agent_count; i++)); do
+                agent_status_entry=$(echo "$AGENT_STATUS" | jq ".[$i]")
+                a_status=$(echo "$agent_status_entry" | jq -r '.status')
+                a_id=$(echo "$agent_status_entry" | jq -r '.agentId')
+                if [ "$a_status" = "blocked" ]; then
+                    retry_result="/tmp/.prd_agent_${a_id}_results.json"
+                    if [ -f "$retry_result" ]; then
+                        new_reason=$(jq -r --arg tid "$tid" \
+                            '(.blockedTasks // [])[] | select(.taskId | test("RETRY-" + $tid + "$")) | .reason // empty' \
+                            "$retry_result" 2>/dev/null)
+                        if [ -z "$new_reason" ]; then
+                            new_reason=$(jq -r '.notes // empty' "$retry_result" 2>/dev/null)
+                        fi
+                        if [ -n "$new_reason" ]; then
+                            worker_notes=$(jq -r '.notes // ""' "$retry_result" 2>/dev/null)
+                            worker_model=$(jq -r '.model // ""' "$retry_result" 2>/dev/null)
+                            files_attempted=$(jq -c '[(.filesCreated // [])[], (.filesModified // [])[]] | unique' "$retry_result" 2>/dev/null || echo '[]')
+                            captured_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                            jq --arg tid "$tid" --arg reason "$new_reason" \
+                                --arg notes "$worker_notes" --arg model "$worker_model" \
+                                --argjson filesAttempted "$files_attempted" \
+                                --arg capturedAt "$captured_at" --arg phase "$CURRENT_PHASE" \
+                                '(.tasks[] | select(.taskId == $tid)) |= . + {
+                                    blockReason: $reason,
+                                    blockDetails: {workerNotes: $notes, filesAttempted: $filesAttempted, model: $model, capturedAt: $capturedAt, phase: $phase}
+                                }' \
+                                "$phase_file" > "${phase_file}.tmp" && mv "${phase_file}.tmp" "$phase_file"
+                            break
+                        fi
+                    fi
+                fi
+            done
         fi
     done
 fi

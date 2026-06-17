@@ -216,11 +216,76 @@ for ((w=0; w<wave_count; w++)); do
         original_info=$(echo "$BLOCKED_TASKS" | jq --arg id "$original_task" '.[] | select(.taskId == $id)')
         original_reason=$(echo "$original_info" | jq -r '.blockReason // "Unknown"')
 
+        # Get blockDetails from phase JSON (persisted diagnostics from previous build failure)
+        block_details_section=""
+        if [ -n "$PHASE_JSON" ]; then
+            has_details=$(echo "$PHASE_JSON" | jq -r --arg id "$original_task" '.tasks[] | select(.taskId == $id) | .blockDetails // empty | type')
+            if [ "$has_details" = "object" ]; then
+                bd_notes=$(echo "$PHASE_JSON" | jq -r --arg id "$original_task" '.tasks[] | select(.taskId == $id) | .blockDetails.workerNotes // ""')
+                bd_files=$(echo "$PHASE_JSON" | jq -r --arg id "$original_task" '.tasks[] | select(.taskId == $id) | .blockDetails.filesAttempted // [] | join(", ")')
+                bd_model=$(echo "$PHASE_JSON" | jq -r --arg id "$original_task" '.tasks[] | select(.taskId == $id) | .blockDetails.model // ""')
+                block_details_section="
+### Previous Attempt Diagnostics
+- **Worker notes**: $bd_notes
+- **Files attempted**: $bd_files
+- **Model used**: $bd_model
+"
+            fi
+        fi
+
         # Get agentHint from resolution task or look up from phase JSON
         agent_hint=$(echo "$agent" | jq -r '.agentHint // empty')
         if [ -z "$agent_hint" ] && [ -n "$PHASE_JSON" ]; then
             # Try to get agentHint from original task in phase JSON
             agent_hint=$(echo "$PHASE_JSON" | jq -r --arg id "$original_task" '.tasks[] | select(.taskId == $id) | .agentHint // empty')
+        fi
+
+        # Build verify-retry instructions for verify tasks
+        VERIFY_INSTRUCTIONS_FILE="/tmp/.prd_verify_retry_instructions.txt"
+        if [ "$task_type" = "verify-retry" ] && [ -n "$PHASE_JSON" ]; then
+            original_desc=$(echo "$PHASE_JSON" | jq -r --arg id "$original_task" '.tasks[] | select(.taskId == $id) | .description // empty')
+            original_criteria=$(echo "$PHASE_JSON" | jq -r --arg id "$original_task" '.tasks[] | select(.taskId == $id) | .acceptanceCriteria // [] | join("\n- ")')
+            cat > "$VERIFY_INSTRUCTIONS_FILE" << VEOF
+## Verify-Retry Instructions (MANDATORY)
+
+This is a **verify-retry** task. The original verify task failed during a previous build. Your job is to run the verification, analyze any failures, fix the code, and re-verify.
+
+### Original Task Description
+$original_desc
+
+### Acceptance Criteria
+- $original_criteria
+
+### Previous Failure
+$original_reason
+VEOF
+            cat >> "$VERIFY_INSTRUCTIONS_FILE" << 'VEOF2'
+
+### Running Commands (CRITICAL)
+
+**ALL verification commands MUST be run through the capture script to prevent context overflow:**
+
+```bash
+bash $WORKSPACE_DIR/.claude/commands/scripts/run-and-capture.sh '<command>'
+```
+
+The script captures full output to a log file and returns only:
+- Exit code and pass/fail status
+- Last 50 lines on failure (enough to identify the error)
+- Log file path (use `Read` on the log file ONLY if the 50-line tail is insufficient)
+
+**NEVER run verification commands directly** (e.g. `npx vitest ...`, `npx playwright ...`, `dotnet test ...`). Always use the capture script.
+
+### Procedure
+1. Run each verification command through the capture script
+2. If all pass: mark complete
+3. If any fail: read the failure summary, identify the root cause, fix the code
+4. Re-run the failing command through the capture script
+5. Repeat steps 3-4 up to **3 fix iterations**
+6. If still failing after 3 iterations: mark as **blocked** with the remaining failure details in blockReason
+VEOF2
+        else
+            : > "$VERIFY_INSTRUCTIONS_FILE"
         fi
 
         # Build worktree setup instructions if applicable
@@ -261,9 +326,25 @@ After commit: write results JSON → EXIT. NEVER merge/rebase/resolve conflicts.
             commit_instructions=""
         fi
 
-        # Build full prompt
-        prompt="$AGENT_CONTEXT
-$DESIGN_REFERENCE
+        # Verify-retry tasks don't need full context — they run commands and fix failures
+        if [ "$task_type" = "verify-retry" ]; then
+            effective_context="$AGENT_CONTEXT"
+            effective_design=""
+        else
+            effective_context="$AGENT_CONTEXT"
+            effective_design="$DESIGN_REFERENCE"
+        fi
+
+        # Build full prompt via temp file (avoids backtick re-expansion)
+        PROMPT_TMP="/tmp/.prd_unblock_prompt_tmp.txt"
+        agent_hint_line=""
+        [ -n "$agent_hint" ] && agent_hint_line="**Agent Hint**: $agent_hint"
+        worktree_val=$(if [ -n "$worktree" ]; then echo "\"$worktree\""; else echo "null"; fi)
+        branch_val=$(if [ -n "$branch" ]; then echo "\"$branch\""; else echo "null"; fi)
+
+        cat > "$PROMPT_TMP" <<PROMPT_EOF
+$effective_context
+$effective_design
 
 $UNBLOCK_CONTEXT
 $worktree_setup
@@ -284,36 +365,41 @@ $worktree_setup
 **Block Reason**: $original_reason
 **Resolution**: $resolution
 **Target Files**: $target_files
-$([ -n "$agent_hint" ] && echo "**Agent Hint**: $agent_hint")
-$commit_instructions
+$agent_hint_line
+$block_details_section
+PROMPT_EOF
+
+        # Append sections with literal backticks
+        [ -s "$VERIFY_INSTRUCTIONS_FILE" ] && cat "$VERIFY_INSTRUCTIONS_FILE" >> "$PROMPT_TMP"
+        [ -n "$commit_instructions" ] && echo "$commit_instructions" >> "$PROMPT_TMP"
+
+        cat >> "$PROMPT_TMP" << PROMPT_EOF2
 ## Output Requirements (MANDATORY)
 
 Write your detailed results to \`/tmp/.prd_agent_${agent_id}_results.json\`:
 \`\`\`json
 {
-  \"agentId\": \"$agent_id\",
-  \"waveId\": $wave_id,
-  \"taskIds\": [\"$task_id\"],
-  \"status\": \"complete\",
-  \"model\": \"$model\",
-  \"filesModified\": [\"path/to/file\"],
-  \"filesCreated\": [\"path/to/file\"],
-  \"worktree\": $(if [ -n "$worktree" ]; then echo "\"$worktree\""; else echo "null"; fi),
-  \"branch\": $(if [ -n "$branch" ]; then echo "\"$branch\""; else echo "null"; fi),
-  \"notes\": \"Brief summary of what was done to resolve the blocker\"
+  "agentId": "$agent_id",
+  "waveId": $wave_id,
+  "taskIds": ["$task_id"],
+  "status": "complete",
+  "model": "$model",
+  "filesModified": ["path/to/file"],
+  "filesCreated": ["path/to/file"],
+  "worktree": $worktree_val,
+  "branch": $branch_val,
+  "notes": "Brief summary of what was done to resolve the blocker"
 }
 \`\`\`
-If blocked, set \"status\": \"blocked\" and include \"blockedReason\" field.
+If blocked, set "status": "blocked" and include "blockedReason" field.
 Write this file IMMEDIATELY when you start, then update as you work.
 
 Return ONLY this single-line JSON as your final response:
-{\"agentId\":\"$agent_id\",\"status\":\"complete|blocked\",\"taskIds\":[\"$task_id\"]}"
+{"agentId":"$agent_id","status":"complete|blocked","taskIds":["$task_id"]}
+PROMPT_EOF2
 
         # Build agent object with prompt
         task_ids_array="[\"$task_id\"]"
-        # Write prompt to temp file to avoid ARG_MAX limit
-        PROMPT_TMP="/tmp/.prd_unblock_prompt_tmp.txt"
-        echo "$prompt" > "$PROMPT_TMP"
 
         agent_obj=$(jq -n \
             --arg id "$agent_id" \

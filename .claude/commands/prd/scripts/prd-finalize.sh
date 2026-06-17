@@ -184,8 +184,10 @@ done
 #------------------------------------------------------------------------------
 for ((i=0; i<agent_count; i++)); do
     agent=$(echo "$AGENT_STATUS" | jq ".[$i]")
+    agent_id=$(echo "$agent" | jq -r '.agentId')
     status=$(echo "$agent" | jq -r '.status')
     task_ids=$(echo "$agent" | jq -r '.taskIds[]')
+    result_file="/tmp/.prd_agent_${agent_id}_results.json"
 
     # Determine new taskStatus
     if [ "$status" = "complete" ]; then
@@ -198,10 +200,43 @@ for ((i=0; i<agent_count; i++)); do
 
     # Update each task
     for tid in $task_ids; do
-        # Use jq to update
-        jq --arg tid "$tid" --arg status "$new_status" \
-            '(.tasks[] | select(.taskId == $tid)).taskStatus = $status' \
-            "$phase_file" > "${phase_file}.tmp" && mv "${phase_file}.tmp" "$phase_file"
+        if [ "$new_status" = "Blocked" ] && [ -f "$result_file" ]; then
+            # Extract block reason from worker results
+            reason=$(jq -r --arg tid "$tid" \
+                '(.blockedTasks // [])[] | select(.taskId == $tid) | .reason // empty' \
+                "$result_file" 2>/dev/null)
+            if [ -z "$reason" ]; then
+                reason=$(jq -r '.notes // empty' "$result_file" 2>/dev/null)
+            fi
+            : "${reason:=Worker reported blocked (no reason captured)}"
+
+            # Build blockDetails object with full diagnostic context
+            worker_notes=$(jq -r '.notes // ""' "$result_file" 2>/dev/null)
+            worker_model=$(jq -r '.model // ""' "$result_file" 2>/dev/null)
+            files_attempted=$(jq -c '[(.filesCreated // [])[], (.filesModified // [])[]] | unique' "$result_file" 2>/dev/null || echo '[]')
+            captured_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+            jq --arg tid "$tid" --arg status "$new_status" --arg reason "$reason" \
+                --arg notes "$worker_notes" --arg model "$worker_model" \
+                --argjson filesAttempted "$files_attempted" \
+                --arg capturedAt "$captured_at" --arg phase "$CURRENT_PHASE" \
+                '(.tasks[] | select(.taskId == $tid)) |= . + {
+                    taskStatus: $status,
+                    blockReason: $reason,
+                    blockDetails: {
+                        workerNotes: $notes,
+                        filesAttempted: $filesAttempted,
+                        model: $model,
+                        capturedAt: $capturedAt,
+                        phase: $phase
+                    }
+                }' \
+                "$phase_file" > "${phase_file}.tmp" && mv "${phase_file}.tmp" "$phase_file"
+        else
+            jq --arg tid "$tid" --arg status "$new_status" \
+                '(.tasks[] | select(.taskId == $tid)).taskStatus = $status' \
+                "$phase_file" > "${phase_file}.tmp" && mv "${phase_file}.tmp" "$phase_file"
+        fi
     done
 done
 

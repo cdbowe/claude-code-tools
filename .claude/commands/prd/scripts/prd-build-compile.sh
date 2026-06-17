@@ -245,7 +245,15 @@ $fsd_imports"
             post_validation="
 ## Post-Validation (AFTER Implementation - MANDATORY)
 
-**Complete these checks AFTER implementation, BEFORE marking task complete:**
+**Complete these checks AFTER implementation, BEFORE marking task complete.**
+
+**ALL validation commands MUST be run through the capture script to prevent context overflow:**
+\`\`\`bash
+bash \$WORKSPACE_DIR/.claude/commands/scripts/run-and-capture.sh '<command>'
+\`\`\`
+The script captures full output to a log file and returns only a summary (exit code, last 50 lines on failure, log file path). **NEVER run validation commands directly.**
+
+**Checks:**
 "
             while IFS= read -r key; do
                 value=$(echo "$task" | jq -r ".postValidation[\"$key\"]")
@@ -313,10 +321,39 @@ After commit: write results JSON → EXIT. NEVER merge/rebase/resolve conflicts.
 "
         fi
 
+        # Verify tasks don't need DESIGN_REFERENCE — they run commands and fix failures
+        VERIFY_INSTRUCTIONS_FILE="/tmp/.prd_verify_instructions.txt"
+        if [ "$task_type" = "verify" ]; then
+            effective_context="$AGENT_CONTEXT"
+            effective_design=""
+            cat > "$VERIFY_INSTRUCTIONS_FILE" << 'VERIFY_EOF'
+## Running Commands (CRITICAL)
+
+**ALL verification commands MUST be run through the capture script to prevent context overflow:**
+
+```bash
+bash $WORKSPACE_DIR/.claude/commands/scripts/run-and-capture.sh '<command>'
+```
+
+The script captures full output to a log file and returns only:
+- Exit code and pass/fail status
+- Last 50 lines on failure (enough to identify the error)
+- Log file path (use `Read` on the log file ONLY if the 50-line tail is insufficient)
+
+**NEVER run verification commands directly** (e.g. `npx vitest ...`, `npx playwright ...`, `dotnet test ...`). Always use the capture script.
+
+If tests fail: read the failure summary, identify the root cause, fix the code, re-run through the capture script. Up to **3 fix iterations** before marking as blocked.
+VERIFY_EOF
+        else
+            effective_context="$AGENT_CONTEXT"
+            effective_design="$DESIGN_REFERENCE"
+            : > "$VERIFY_INSTRUCTIONS_FILE"
+        fi
+
         # Build full prompt
         prompt=$(cat <<PROMPT_EOF
-$AGENT_CONTEXT
-$DESIGN_REFERENCE
+$effective_context
+$effective_design
 $worktree_setup
 ## Your Assignment
 
@@ -338,6 +375,7 @@ $([ -n "$agent_hint" ] && echo "
 $test_details
 $verify_steps
 $file_structure_section
+$verify_capture_instructions
 $post_validation
 $worktree_commit
 ## Output Requirements (MANDATORY)
