@@ -153,7 +153,6 @@
     "type": "command",
     "command": "$CLAUDE_PROJECT_DIR/.claude/statusline/statusline_script.sh --usage-script \"$CLAUDE_PROJECT_DIR/.claude/statusline/est_claude_usage.sh\""
   },
-  "effortLevel": "medium",
   "promptSuggestionEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "autoCompactEnabled": false,
