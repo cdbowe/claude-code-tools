@@ -282,6 +282,14 @@ Phase Progress: $phase_complete/$phase_total tasks ($phase_pct%)
 EOF
 
 #------------------------------------------------------------------------------
+# Clean up leftover worktrees from original build (blocked agents' worktrees)
+#------------------------------------------------------------------------------
+CLEANUP_SCRIPT="${WORKSPACE_DIR}/.claude/commands/scripts/worktree-cleanup.sh"
+if [ -x "$CLEANUP_SCRIPT" ]; then
+    bash "$CLEANUP_SCRIPT" "wt-prd-${CURRENT_PHASE}-*" 2>/dev/null || true
+fi
+
+#------------------------------------------------------------------------------
 # Clean up temp files
 #------------------------------------------------------------------------------
 rm -f /tmp/.prd_agent_*_results.json
