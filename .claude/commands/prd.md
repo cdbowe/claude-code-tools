@@ -1,6 +1,6 @@
 ---
 allowed-tools: Task, TaskOutput, Bash, Read, AskUserQuestion
-argument-hint: "stat | list [search_text] | load <search_text> | read <phase> | plan | build [phase] [--next] [--tasks-per-wave N] \n| plan-unblock [prompt] | unblock [prompt] | gen <prompt> | gen --file <path> | edit <prompt> | review <phase> | review-all"
+argument-hint: "stat | list [search_text] | load <search_text> | read <phase> | summarize [phase] | plan | build [phase] [--next] [--tasks-per-wave N] \n| plan-unblock [prompt] | unblock [prompt] | gen <prompt> | gen --file <path> | edit <prompt> | review <phase> | review-all"
 description: PRD management - Script-first orchestration with JSON agent output
 ---
 
@@ -59,7 +59,7 @@ $ARGUMENTS
 ```
 
 Extract:
-- `SUBCOMMAND`: stat, list, load, read, gen, plan, build, plan-unblock, unblock, edit, review, review-all, help
+- `SUBCOMMAND`: stat, list, load, read, summarize, gen, plan, build, plan-unblock, unblock, edit, review, review-all, help
 - Fields: PHASE_NUM, INPUT_MODE, FILE_PATH, TEMP_FILE, ERROR, TASKS_PER_WAVE (from `--tasks-per-wave <N>`), SEARCH_TEXT (for `list [search_text]` or `load <search_text>`), NEXT_FLAG (true if `--next` present), UNBLOCK_PROMPT (for `plan-unblock [prompt]` or `unblock [prompt]`)
 
 ---
@@ -72,6 +72,7 @@ Extract:
 | `list` | `prd-list.sh` | script |
 | `load` | `prd-load.sh` | script |
 | `read` | `prd-read.sh` | script |
+| `summarize` | `prd-summarize.sh` + LLM summary | script+inline |
 | `plan` | `prd-plan-inject.sh` (UserPromptSubmit hook, stdout) | hook (no action) |
 | `plan-unblock` | `prd-unblock` agent + display script | agent+script |
 | `build [phase]` | (optional) read+plan, then compile + workers + finalize + display | hybrid |
@@ -107,6 +108,7 @@ Output EXACTLY (no intro, no outro):
 - `/prd list [search]` - Browse and load a PRD (optional: filter by name)
 - `/prd load <search>` - Load PRD by name (requires exactly one match)
 - `/prd read <phase>` - Load a specific phase (0 = infrastructure)
+- `/prd summarize [phase]` - Summarize a phase (defaults to current phase)
 - `/prd plan` - Generate execution plan for loaded phase
 - `/prd build [phase] [--next] [--tasks-per-wave N]` - Execute plan (default 10 tasks/wave)
 - `/prd build --next` - Auto-build next phase (increments current phase by 1)
@@ -184,6 +186,43 @@ If UNRECOGNIZED, prepend ONLY: `Unknown command: [cmd]\n\n`
    - Output stdout EXACTLY
 
 5. **If direct output**: Output stdout EXACTLY
+
+---
+
+### `summarize`
+
+1. If no ACTIVE_PRD: Output `No PRD loaded. Run \`/prd list\` first.` — STOP
+
+2. Run: `!`echo $WORKSPACE_DIR/.claude/commands/prd/scripts`/prd-summarize.sh [PHASE_NUM]`
+   - If exit code non-zero: Output script stdout EXACTLY — STOP
+
+3. Read `/tmp/.prd_summarize.json`
+
+4. Generate and output summary in this EXACT format:
+
+```
+## Phase [phaseId]: [phaseName]
+
+[4-sentence (or fewer) paragraph summarizing the phase's purpose and scope. Distill the phaseDescription and the collection of tasks into a cohesive summary of WHAT the phase accomplishes and WHY.]
+
+### Tasks
+
+**[taskId] — [taskName]** ([taskType])
+[3-sentence (or fewer) paragraph summarizing the task. Distill the task description into purpose and scope. Do NOT repeat implementation commands or file paths.]
+
+**[taskId] — [taskName]** ([taskType])
+[3-sentence (or fewer) paragraph]
+
+[...repeat for all tasks]
+```
+
+**Summary generation rules:**
+- Phase summary: Synthesize purpose across all tasks. Mention key deliverables. Note completion status if mixed.
+- Task summary: Focus on what the task creates/modifies and why. Omit CLI commands, file paths, and step-by-step instructions.
+- Use present tense ("Creates...", "Configures...", "Sets up...").
+- Never include raw description text verbatim — always rephrase and condense.
+
+**STOP. NO ADDITIONAL TEXT AFTER THE SUMMARY.**
 
 ---
 
@@ -868,6 +907,7 @@ If NO PHASE_NUM provided, proceed directly to step 1 (expects existing plan).
 | Run script (NOT awaiting selection) | Script stdout ONLY |
 | Spawn agent | Agent JSON → display script → display stdout ONLY |
 | Error | Error message ONLY |
+| `summarize` subcommand | Script extracts data → LLM generates formatted summary ONLY |
 
 **NO INTROS. NO OUTROS. NO COMMENTARY. NO SUMMARIES. NO "Here's the result". NO "Let me know". NOTHING.**
 
