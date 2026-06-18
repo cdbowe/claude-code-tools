@@ -1,6 +1,6 @@
 ---
 allowed-tools: Task, TaskOutput, Bash, Read, AskUserQuestion
-argument-hint: "stat | list [search_text] | load <search_text> | read <phase> | plan | build [phase] [--next] [--tasks-per-wave N] \n| plan-unblock [prompt] | unblock [prompt] | gen <prompt> | gen --file <path> | edit <prompt> | review <phase>"
+argument-hint: "stat | list [search_text] | load <search_text> | read <phase> | plan | build [phase] [--next] [--tasks-per-wave N] \n| plan-unblock [prompt] | unblock [prompt] | gen <prompt> | gen --file <path> | edit <prompt> | review <phase> | review-all"
 description: PRD management - Script-first orchestration with JSON agent output
 ---
 
