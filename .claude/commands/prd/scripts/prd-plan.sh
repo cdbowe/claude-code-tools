@@ -55,6 +55,7 @@ jq '
     model: (
       if .taskType == "generate-test" then "sonnet"
       elif .taskType == "create-file" then "sonnet"
+      elif .taskType == "verify" then "sonnet"
       else "haiku"
       end
     )
