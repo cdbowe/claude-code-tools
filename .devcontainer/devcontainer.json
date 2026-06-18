@@ -1,0 +1,37 @@
+{
+  "name": "claude-code-tools",
+  "workspaceFolder": "/workspaces/claude-code-tools",
+  "workspaceMount": "",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "WORKSPACE_DIR": "/workspaces/claude-code-tools"
+    }
+  },
+  "features": {},
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Anthropic.claude-code"
+      ]
+    }
+  },
+  "remoteEnv": {
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
+    "WORKSPACE_DIR": "/workspaces/claude-code-tools",
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude"
+  },
+  "remoteUser": "node",
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+    "source=${localWorkspaceFolder}/.claude,target=${containerWorkspaceFolder}/.claude,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/.devcontainer,target=${containerWorkspaceFolder}/.devcontainer,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/.gitignore,target=${containerWorkspaceFolder}/.gitignore,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/LICENSE,target=${containerWorkspaceFolder}/LICENSE,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/README.md,target=${containerWorkspaceFolder}/README.md,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/README.md.bak,target=${containerWorkspaceFolder}/README.md.bak,type=bind,consistency=cached",
+    "source=claude-code-home,target=/home/node/.claude,type=volume"
+  ],
+  "postCreateCommand": "sudo chmod +x .devcontainer/scripts/*.sh && bash .devcontainer/scripts/post-create.sh",
+  "postStartCommand": "sudo chmod +x .devcontainer/scripts/*.sh && bash .devcontainer/scripts/post-start.sh"
+}
