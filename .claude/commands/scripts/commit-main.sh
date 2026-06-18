@@ -68,3 +68,6 @@ if git status --porcelain | grep -q .; then
 else
     echo "No changes to commit in main"
 fi
+
+# Keep synthetic origin/main ref in sync (no real remote in this container)
+git update-ref refs/remotes/origin/main refs/heads/main
