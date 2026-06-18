@@ -388,7 +388,7 @@ build_rate_limit_line() {
     else
         reset_display=$(date -d "@$resets_at" +"%-I:%M%p" 2>/dev/null || date -r "$resets_at" +"%l:%M%p" 2>/dev/null)
     fi
-    reset_display=$(echo "$reset_display" | tr '[:upper:]' '[:lower:]' | sed 's/^ //')
+    reset_display=$(echo "$reset_display" | sed 's/AM/am/; s/PM/pm/; s/^ //')
 
     printf "${COLOR_TRANSCRIPT}%-8s[%s] %5s  usage${COLOR_RESET}\n" \
         "${label}" "${usage_bar}" "${rounded_pct}%"
