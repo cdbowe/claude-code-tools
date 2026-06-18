@@ -56,6 +56,10 @@ COLOR_RED="\033[31m"    # Red (for API failure indicator)
 # Progress bar characters (Unicode blocks for better visual appearance)
 PROGRESS_FILLED="█"           # U+2588 - Full block
 PROGRESS_EMPTY="░"            # U+2591 - Light shade
+# Eighth block characters for fractional fill (index 0=empty, 1-7=partial, 8=full)
+PROGRESS_EIGHTHS=(" " "▏" "▎" "▍" "▌" "▋" "▊" "▉" "█")
+# Lookup: maps remainder 0-9 to eighth index (uniform distribution, duplicates at 3-4 and 7-8)
+EIGHTH_LOOKUP=(0 1 2 3 3 4 5 6 6 7)
 
 # Path to estimated usage script file (passed in from statusline command)
 USAGE_SCRIPT=""
@@ -121,6 +125,10 @@ TOTAL_COST_USD=$(echo "$JSON_INPUT" | jq -r '.cost.total_cost_usd // 0')
 ELAPSED_DURATION_MS=$(echo "$JSON_INPUT" | jq -r '.cost.total_duration_ms // 0')
 API_DURATION_MS=$(echo "$JSON_INPUT" | jq -r '.cost.total_api_duration_ms // 0')
 CONTEXT_USED_PCT=$(echo "$JSON_INPUT" | jq -r '.context_window.used_percentage // 0')
+RATE_LIMIT_5H_USED_PCT=$(echo "$JSON_INPUT" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+RATE_LIMIT_5H_RESETS_AT=$(echo "$JSON_INPUT" | jq -r '.rate_limits.five_hour.resets_at // empty')
+RATE_LIMIT_7D_USED_PCT=$(echo "$JSON_INPUT" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+RATE_LIMIT_7D_RESETS_AT=$(echo "$JSON_INPUT" | jq -r '.rate_limits.seven_day.resets_at // empty')
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -138,20 +146,43 @@ has_usage_script() {
     fi
 }
 
-# Function: Build a 10-character progress bar
-# Usage: build_progress_bar <filled_count>
-# Args: filled_count - number of filled chars (0-10, values >10 are capped)
-# Note: Uses loop instead of substring expansion to handle multi-byte UTF-8 chars
+# Function: Build a 10-character progress bar with fractional fill using eighth blocks
+# Usage: build_progress_bar <percentage>
+# Args: percentage - value 0-100 (capped at boundaries)
+# Each of the 10 chars represents 10%. The transition char uses eighth blocks
+# for sub-10% precision (~1.25% resolution).
 build_progress_bar() {
-    # echo "build_progress_bar $1"
-    local filled=$1
-    local max=${2:-10}
-    # Cap at 0-max range
-    if [ "$filled" -gt $max ]; then filled=$max; fi
-    if [ "$filled" -lt 0 ]; then filled=0; fi
-    local empty=$(($max - filled))
+    local pct=$1
+    local max=10
+
+    # Clamp percentage to 0-100
+    if (( $(echo "$pct > 100" | bc -l) )); then pct=100; fi
+    if (( $(echo "$pct < 0" | bc -l) )); then pct=0; fi
+
+    # Calculate filled chars and fractional eighth via lookup table
+    local filled=$(echo "$pct / 10" | bc)
+    local remainder=$(echo "$pct - ($filled * 10)" | bc)
+    local remainder_int=${remainder%.*}
+    if [ -z "$remainder_int" ] || [ "$remainder_int" -lt 0 ] 2>/dev/null; then remainder_int=0; fi
+    if [ "$remainder_int" -gt 9 ]; then remainder_int=9; fi
+    local eighth=${EIGHTH_LOOKUP[$remainder_int]}
+
+    if [ "$filled" -ge $max ]; then
+        filled=$max
+        eighth=0
+    fi
+
+    local empty=$((max - filled))
+    # If there's a fractional char, it takes one of the empty slots
+    if [ "$eighth" -gt 0 ] && [ "$empty" -gt 0 ]; then
+        empty=$((empty - 1))
+    fi
+
     local bar=""
     for ((i=0; i<filled; i++)); do bar+="$PROGRESS_FILLED"; done
+    if [ "$eighth" -gt 0 ] && [ "$filled" -lt $max ]; then
+        bar+="${PROGRESS_EIGHTHS[$eighth]}"
+    fi
     for ((i=0; i<empty; i++)); do bar+="$PROGRESS_EMPTY"; done
     echo "$bar"
 }
@@ -284,9 +315,7 @@ get_context_element() {
         CONTEXT_PCT="0.0"
     fi
 
-    # Build progress bar (10 characters, each representing 10%)
-    FILLED_CHARS=$(echo "$CONTEXT_PCT / 10" | bc)
-    PROGRESS_BAR=$(build_progress_bar "$FILLED_CHARS")
+    PROGRESS_BAR=$(build_progress_bar "$CONTEXT_PCT")
 
     # Display debug line
     if [ "$display_mode" = "debug" ]; then
@@ -298,85 +327,84 @@ get_context_element() {
     echo -e "${COLOR_CONTEXT_SIZE}${CURRENT_DISPLAY}/${CONTEXT_LIMIT_K}K | ${CONTEXT_PCT}% [${PROGRESS_BAR}] (${CONTEXT_USED_PCT}%) ${COLOR_RESET}"
 }
 
-# Function: call the passed usage script (if provided)
-get_est_usage_element() {
-    if ! has_usage_script; then
+# Function: Format remaining seconds as human-readable duration
+format_remaining_time() {
+    local remaining=$1
+    if [ "$remaining" -lt 0 ]; then remaining=0; fi
+
+    local days=$((remaining / 86400))
+    local hours=$(((remaining % 86400) / 3600))
+    local mins=$(((remaining % 3600) / 60))
+
+    if [ "$days" -gt 0 ]; then
+        echo "${days}d ${hours}h"
+    elif [ "$hours" -gt 0 ]; then
+        echo "${hours}h ${mins}m"
+    else
+        echo "${mins}m"
+    fi
+}
+
+# Function: Build a rate limit line with usage bar + time bar
+# Args: label used_pct resets_at_epoch window_size_seconds show_day
+build_rate_limit_line() {
+    local label=$1
+    local used_pct=$2
+    local resets_at=$3
+    local window_size=$4
+    local show_day=$5
+
+    if [ -z "$used_pct" ] || [ -z "$resets_at" ]; then
+        printf "${COLOR_TRANSCRIPT}%-8s N/A${COLOR_RESET}\n" "${label}:"
         return
     fi
 
-    # Call the script to estimate current usage
-    # Output format: est_pct total_credits session_limit api_cost actual_pct est_usage_diff seconds_remaining
-    # seconds_remaining: -2 = no actual usage, -1 = fresh API call, >= 0 = cached (seconds until expiry)
-    local usage_script_args="--statusline"
-    if [ "$ENABLE_OAUTH_API" = true ]; then
-        usage_script_args="$usage_script_args --enable-oauth-api"
+    local current_time=$(date +%s)
+    local rounded_pct=$(printf "%.1f" "$used_pct")
+
+    # Usage progress bar
+    local usage_bar=$(build_progress_bar "$rounded_pct")
+
+    # Time progress calculation
+    local session_start=$((resets_at - window_size))
+    local elapsed=$((current_time - session_start))
+    if [ "$elapsed" -lt 0 ]; then elapsed=0; fi
+    if [ "$elapsed" -gt "$window_size" ]; then elapsed=$window_size; fi
+
+    local time_pct_x10=$((elapsed * 1000 / window_size))
+    local time_pct_whole=$((time_pct_x10 / 10))
+    local time_pct_decimal=$((time_pct_x10 % 10))
+    local time_pct=$(echo "scale=1; $time_pct_x10 / 10" | bc)
+    local time_bar=$(build_progress_bar "$time_pct")
+
+    # Remaining time
+    local remaining=$((resets_at - current_time))
+    local remaining_display=$(format_remaining_time "$remaining")
+
+    # Format reset time
+    local reset_display
+    if [ "$show_day" = "true" ]; then
+        reset_display=$(date -d "@$resets_at" +"%a @ %-I:%M%p" 2>/dev/null || date -r "$resets_at" +"%a @ %l:%M%p" 2>/dev/null)
+    else
+        reset_display=$(date -d "@$resets_at" +"%-I:%M%p" 2>/dev/null || date -r "$resets_at" +"%l:%M%p" 2>/dev/null)
     fi
-    read -r est_usage_pct est_total_credits est_session_limit est_api_cost actual_usage_pct est_usage_diff seconds_remaining < \
-        <(bash "$USAGE_SCRIPT" $usage_script_args)
+    reset_display=$(echo "$reset_display" | tr '[:upper:]' '[:lower:]' | sed 's/^ //')
 
-    # Build progress bar (10 characters, each representing 10%)
-    local filled_usage_chars=$(echo "$est_usage_pct / 10" | bc)
-    local usage_progress_bar=$(build_progress_bar "$filled_usage_chars")
+    printf "${COLOR_TRANSCRIPT}%-8s[%s] %5s  usage${COLOR_RESET}\n" \
+        "${label}" "${usage_bar}" "${rounded_pct}%"
+    printf "${COLOR_TRANSCRIPT}        [%s] %5s  resets %s (%s)${COLOR_RESET}\n" \
+        "${time_bar}" "${time_pct_whole}.${time_pct_decimal}%" "${reset_display}" "${remaining_display}"
+}
 
-    # Format actual usage percentage and build progress bar
-    # seconds_remaining: -3 = API call failed, -2 = no actual usage, -1 = fresh API call, >= 0 = cached (seconds until expiry)
-    local actual_pct_value="0.0"
-    local actual_pct_display="0.0%"
-    local actual_indicator=""
-
-    if [ "$ENABLE_OAUTH_API" = false ]; then
-        # OAuth API disabled - show [OFF]
-        actual_indicator=" ${COLOR_RED}[OFF]${COLOR_RESET}"
-    elif [ "$seconds_remaining" = "-3" ]; then
-        # API call failed - show red [!]
-        actual_indicator=" ${COLOR_RED}[!]${COLOR_RESET}"
-        if [ -n "$actual_usage_pct" ] && [ "$actual_usage_pct" != "-" ]; then
-            actual_pct_value="$actual_usage_pct"
-            actual_pct_display="$actual_usage_pct%"
-        fi
-    elif [ -n "$actual_usage_pct" ] && [ "$actual_usage_pct" != "-" ]; then
-        actual_pct_value="$actual_usage_pct"
-        actual_pct_display="$actual_usage_pct%"
-    fi
-
-    # Build progress bar for actual usage (10 characters, each representing 10%)
-    local filled_actual_chars=$(echo "$actual_pct_value / 10" | bc)
-    local actual_progress_bar=$(build_progress_bar "$filled_actual_chars")
-
-    # Format the diff
-    local diff_display=""
-    if [ -n "$est_usage_diff" ] && [ "$est_usage_diff" != "-" ]; then
-        if (( $(echo "$est_usage_diff >= 0" | bc -l) )); then
-            diff_display=" (+${est_usage_diff}%)"
-        else
-            diff_display=" (${est_usage_diff}%)"
-        fi
+# Function: Output both rate limit lines and sync session state
+get_rate_limits_element() {
+    # Sync 5-hour reset time to session state file for the estimation script
+    if [ -n "$RATE_LIMIT_5H_RESETS_AT" ]; then
+        save_reset_time "$RATE_LIMIT_5H_RESETS_AT"
     fi
 
-    # Show seconds remaining OR updated indicator (mutually exclusive)
-    local seconds_remaining_display=""
-    if [ "$seconds_remaining" = "-1" ]; then
-        # Fresh API call - show **UPDATED** instead of cache time
-        # seconds_remaining_display=" **UPDATED**"
-        actual_pct_display="**UPDATE** $actual_pct_display"
-    elif [ "$seconds_remaining" -ge 0 ] 2>/dev/null; then
-        # Cached - show seconds remaining
-        if [ "$seconds_remaining" -ge 60 ]; then
-            local minutes_remaining=$(echo "$seconds_remaining / 60" | bc)
-            local seconds_remainder=$(echo "$seconds_remaining % 60" | bc)
-
-            seconds_remaining_display=" [${minutes_remaining}m ${seconds_remainder}s]"
-        else
-            seconds_remaining_display=" [${seconds_remaining}s]"
-        fi
-    fi
-
-    # Output ESTIMATED USAGE line
-    printf "ESTIMATED USAGE: %17s [%s] (\$%s)\n" "${est_usage_pct}%" "${usage_progress_bar}" "${est_api_cost}"
-
-    # Output ACTUAL USAGE line (aligned with estimated - "ACTUAL USAGE: " is 3 chars shorter, so use %20s instead of %17s)
-    # KEEP for now: printf "ACTUAL USAGE: %20s [%s]%b%b%b\n" "${actual_pct_display}%" "${actual_progress_bar}" "${actual_indicator}" "${diff_display}" "${seconds_remaining_display}"
-    printf "ACTUAL USAGE: %20s [%s]%b%b%b\n" "${actual_pct_display}" "${actual_progress_bar}" "${actual_indicator}" "${diff_display}" "${seconds_remaining_display}"
+    build_rate_limit_line "5-HOUR" "$RATE_LIMIT_5H_USED_PCT" "$RATE_LIMIT_5H_RESETS_AT" "$SESSION_TIME_WINDOW_SIZE" "false"
+    build_rate_limit_line "WEEKLY" "$RATE_LIMIT_7D_USED_PCT" "$RATE_LIMIT_7D_RESETS_AT" "604800" "true"
 }
 
 # Function: Format cost as USD currency
@@ -434,98 +462,6 @@ get_cost_element() {
     # printf "${COLOR_COST}${TOTAL_COST_USD} | ${API_DURATION_MS} | ${ELAPSED_DURATION_MS} ${elapsed_days} ${elapsed_hours} ${elapsed_mins} ${COLOR_RESET}\n"
 }
 
-# Function: Get session reset time with progress bar
-get_reset_time_element() {
-    CURRENT_TIME=$(date +%s)
-    SESSION_START_EPOCH=""
-    RESET_TIME=""
-
-    # Key insight: The current time is ALWAYS inside a session window of SESSION_TIME_WINDOW_SIZE.
-    # Therefore, the session start can NEVER be older than (CURRENT_TIME - SESSION_TIME_WINDOW_SIZE).
-    EARLIEST_VALID_SESSION_START=$((CURRENT_TIME - SESSION_TIME_WINDOW_SIZE))
-
-    # Check if we have a valid cached reset time shared across all instances
-    STORED_RESET_TIME=$(load_stored_reset_time)
-
-    if [ -n "$STORED_RESET_TIME" ] && [ "$STORED_RESET_TIME" -gt 0 ] 2>/dev/null; then
-        if [ "$CURRENT_TIME" -lt "$STORED_RESET_TIME" ]; then
-            # Current time is before stored reset time - session is still valid, use cached value
-            RESET_TIME=$STORED_RESET_TIME
-            SESSION_START_EPOCH=$((RESET_TIME - SESSION_TIME_WINDOW_SIZE))
-        fi
-    fi
-
-    # If we don't have a valid cached reset time, calculate from this instance's transcript
-    if [ -z "$RESET_TIME" ]; then
-        # Determine the minimum epoch to search for session start
-        # Use the GREATER of: expired stored reset time OR (current_time - 5 hours)
-        # This handles two scenarios:
-        #   1. Within 5 hours of reset: use stored reset time (new session starts after it)
-        #   2. More than 5 hours since reset: use (current_time - 5 hours) as minimum
-        if [ -n "$STORED_RESET_TIME" ] && [ "$STORED_RESET_TIME" -gt 0 ] 2>/dev/null; then
-            # Use the greater of stored reset time or earliest valid session start
-            if [ "$STORED_RESET_TIME" -gt "$EARLIEST_VALID_SESSION_START" ]; then
-                MIN_EPOCH_FOR_SESSION_START=$STORED_RESET_TIME
-            else
-                MIN_EPOCH_FOR_SESSION_START=$EARLIEST_VALID_SESSION_START
-            fi
-        else
-            # No stored reset time - look for activity within the session window
-            MIN_EPOCH_FOR_SESSION_START=$EARLIEST_VALID_SESSION_START
-        fi
-
-        # Find the first timestamp in transcript that is >= MIN_EPOCH_FOR_SESSION_START
-        # This is the start of the current session window
-        SESSION_START_ISO=$(get_session_start_from_transcript "$TRANSCRIPT_PATH" "$MIN_EPOCH_FOR_SESSION_START")
-
-        if [ -n "$SESSION_START_ISO" ]; then
-            SESSION_START_EPOCH=$(parse_iso_to_epoch "$SESSION_START_ISO")
-        fi
-
-        # If no valid timestamp found (empty transcript or all timestamps too old), use current time
-        if [ -z "$SESSION_START_EPOCH" ] || ! [ "$SESSION_START_EPOCH" -gt 0 ] 2>/dev/null; then
-            SESSION_START_EPOCH=$CURRENT_TIME
-        fi
-
-        RESET_TIME=$(calculate_reset_time $SESSION_START_EPOCH)
-        # Save to shared file so all other instances use this reset time
-        save_reset_time "$RESET_TIME"
-    fi
-
-    # Format reset time for display
-    RESET_DISPLAY=$(date -d "@$RESET_TIME" +"%-I:%M%p" 2>/dev/null || date -r "$RESET_TIME" +"%l:%M%p" 2>/dev/null)
-    RESET_DISPLAY=$(echo "$RESET_DISPLAY" | tr '[:upper:]' '[:lower:]' | sed 's/^ //')
-
-    # Calculate reset time progress percentage
-    TOTAL_DURATION=$((RESET_TIME - SESSION_START_EPOCH))
-    ELAPSED=$((CURRENT_TIME - SESSION_START_EPOCH))
-
-    # Prevent division by zero and negative values
-    if [ "$TOTAL_DURATION" -le 0 ]; then
-        TOTAL_DURATION=$SESSION_TIME_WINDOW_SIZE
-    fi
-    if [ "$ELAPSED" -lt 0 ]; then
-        ELAPSED=0
-    fi
-
-    PERCENTAGE_TIMES_10=$((ELAPSED * 1000 / TOTAL_DURATION))
-    PERCENTAGE_WHOLE=$((PERCENTAGE_TIMES_10 / 10))
-    PERCENTAGE_DECIMAL=$((PERCENTAGE_TIMES_10 % 10))
-
-    # Calculate remaining time
-    REMAINING=$((RESET_TIME - CURRENT_TIME))
-    if [ "$REMAINING" -lt 0 ]; then
-        REMAINING=0
-    fi
-    REMAINING_HOURS=$((REMAINING / 3600))
-    REMAINING_MINUTES=$(((REMAINING % 3600) / 60))
-
-    # Build 10-character progress bar (each character = 10%)
-    FILLED=$((PERCENTAGE_WHOLE / 10))
-    RESET_BAR=$(build_progress_bar "$FILLED")
-
-    printf "${COLOR_TRANSCRIPT}%-25s %8s [%s]${COLOR_RESET}\n" "RESETS @ ${RESET_DISPLAY} | ${REMAINING_HOURS}h ${REMAINING_MINUTES}m" "${PERCENTAGE_WHOLE}.${PERCENTAGE_DECIMAL}%" "${RESET_BAR}"
-}
 
 # ============================================================================
 # BUILD AND OUTPUT STATUS LINE
@@ -533,22 +469,18 @@ get_reset_time_element() {
 
 # Build status line from individual elements (multiline for readability, output as single line)
 
+# Debug: Output the entire JSON payload
+# echo "$JSON_INPUT" > "$WORKSPACE_DIR/.claude/statusline_data.json"
+
 echo -e "$(get_model_element) | $(get_context_element)"
 # Debug: Show debug display mode
 # echo -e "$(get_model_element) | $(get_context_element "debug")"
 
 echo -e "$(get_directory_element)"
 
-if has_usage_script; then
-    echo -e "$(get_est_usage_element)"
-fi
-
-echo -e "$(get_reset_time_element)"
+get_rate_limits_element
 
 echo -e "$(get_cost_element)"
 
 # Debug: Output the current session ID
 # echo -e "Session ID: ${SESSION_ID}"
-
-# Debug: Output the entire JSON payload
-# echo -e "$JSON_INPUT"
