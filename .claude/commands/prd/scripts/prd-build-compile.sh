@@ -94,7 +94,8 @@ wave_count=$(jq '.waves | length' "$PLAN_FILE")
 for ((w=0; w<wave_count; w++)); do
     wave=$(jq ".waves[$w]" "$PLAN_FILE")
     wave_id=$(echo "$wave" | jq -r '.waveId')
-    use_worktrees=$(echo "$wave" | jq -r '.useWorktrees')
+    # Force worktrees for all waves — required for pre-merge review
+    use_worktrees=true
 
     wave_agents="[]"
     task_count=$(echo "$wave" | jq '.tasks | length')

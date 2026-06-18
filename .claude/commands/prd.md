@@ -336,7 +336,67 @@ If NO PHASE_NUM provided:
 
        Use TaskOutput (blocking) to collect all results from batch
 
-     # 5c. If wave used worktrees, merge branches with conflict resolution
+     # 5b.5 Pre-merge review (pre-check + reviewer agents)
+     #
+     # Pre-check: script-based validation (seconds, no tokens)
+     # Review: Sonnet agents check diffs against acceptance criteria (parallel)
+     # Only approved branches proceed to merge.
+
+     # 5b.5a. Pre-check each worker
+     FOR each agent in wave.agents:
+       IF agent has worktree AND worker status != "blocked":
+         Run: bash !`echo $WORKSPACE_DIR`/.claude/commands/prd/scripts/prd-pre-check.sh "$agentId" "$worktreePath" "$branch" "/tmp/.prd_agent_${agentId}_results.json"
+
+     # 5b.5b. Compile reviewer prompts
+     Run: bash !`echo $WORKSPACE_DIR`/.claude/commands/prd/scripts/prd-review-compile.sh $waveId
+     Parse /tmp/.prd_review_compile.json
+     reviewerCount = reviewers array length
+
+     IF reviewerCount == 0:
+       # All workers blocked or failed pre-check — skip review, proceed to merge (will be no-op)
+       Continue to 5c
+
+     # 5b.5c. Spawn parallel reviewers
+     FOR batch in chunks(reviewers, MAX_CONCURRENT):
+       FOR each reviewer in batch:
+         promptFile = reviewer.promptFile
+         worktree = reviewer.worktree
+
+         Task(
+           subagent_type: "prd-build-reviewer",
+           model: $SONNET_MODEL,
+           prompt: "Read and execute the instructions at $promptFile",
+           run_in_background: true
+         )
+
+       Use TaskOutput (blocking) to collect all results from batch
+
+     # 5b.5d. Partition results
+     FOR each reviewer result at /tmp/.prd_review_{agentId}.json:
+       Parse JSON
+       IF approved == true AND requiresUserApproval == false:
+         Add to approved list
+       ELSE IF requiresUserApproval == true:
+         Add to needsApproval list
+       ELSE:
+         Add to rejected list
+
+     # 5b.5e. User approval gate (DB migrations)
+     IF needsApproval is non-empty:
+       FOR each agent in needsApproval:
+         Read migration files from /tmp/.prd_precheck_{agentId}.json
+         AskUserQuestion: "Agent {agentId} created DB migration files:\n{migrationFiles}\n\nApprove merge? (yes/no)"
+         IF user approves: move to approved list
+         ELSE: move to rejected list
+
+     # 5b.5f. Handle rejected workers
+     FOR each agent in rejected:
+       Read blockers from /tmp/.prd_review_{agentId}.json
+       Mark worker result as blocked with reviewer findings as blockReason
+       # Rejected worktrees will be skipped by merge script (status=blocked)
+
+     # 5c. Merge approved worktree branches with conflict resolution
+     # Note: All waves use worktrees (enforced by build-compile)
      IF useWorktrees:
        Run: bash cd !`echo $WORKSPACE_DIR/` && !`echo $WORKSPACE_DIR`/.claude/commands/scripts/worktree-merge.sh /tmp/.prd_build.json $waveId prd_agent
 

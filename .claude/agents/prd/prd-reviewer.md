@@ -40,6 +40,7 @@ Reviews a single phase JSON for execution-blocking issues only. Optimized for co
 | Blocked status without blockReason | MEDIUM | taskStatus="Blocked" but no reason |
 | Description is single word or empty | MEDIUM | ≤1 word in description |
 | **Missing test CLI command** | **MEDIUM** | **Task has postValidation, steps referencing "run tests"/"verify tests pass", or taskType "verify"/"generate-test", but no explicit CLI command (e.g., `dotnet test`, `npm test`, `vitest`)** |
+| **DB migration requires manual review** | **LOW** | **Task description, steps, or targetFiles reference creating/modifying database migrations (EF migrations, SQL scripts, schema changes, ALTER TABLE). Informational — flags for developer awareness. Pre-merge review will gate the actual merge.** |
 
 ### Missing Dependency Detection (CRITICAL)
 
@@ -356,6 +357,7 @@ Check ONLY the items in the bounded rubric above. For each finding:
 | Blocked without blockReason | missing | medium | Yes | add_block_reason |
 | Description empty or single word | clarification | medium | No | - |
 | Missing test CLI command | missing | medium | No | - |
+| DB migration requires manual review | clarification | low | No | - |
 
 **STOP here. Do NOT check anything else.**
 
