@@ -19,11 +19,6 @@ TIME_FORMAT="12h"
 # NOTE: This will log a new file every time the script is called (i.e. every time the status line updates).
 # JSON_OUTPUT_DIR="$HOME/.claude-code-status-logs"
 
-# Persistent session state file (stores reset time shared across all instances)
-# All Claude Code instances pointing to the same subscription share this reset time.
-# This file will regularly be cleared and overwritten, no extra files created.
-SESSION_STATE_FILE="$HOME/.claude/claude-code-session-state"
-
 # Session time window size in seconds (how long a session lasts before reset)
 # The current time is always inside this window, so session start can never be older than this
 # Default: 5 hours = 18000 seconds
@@ -35,10 +30,6 @@ SESSION_TIME_WINDOW_SIZE=18000
 # Add an estimated overhead here to match the /context command's total.
 # Check /context output to calibrate this value for your setup.
 SYSTEM_OVERHEAD=0 # 11000
-
-# Enable OAuth API usage fetching (true/false)
-# Set to false to disable actual usage API calls (e.g., if rate limited)
-ENABLE_OAUTH_API=true
 
 # ANSI Color Codes (configure as needed)
 # Use format: "\033[XXm" where XX is the color code
@@ -61,46 +52,9 @@ PROGRESS_EIGHTHS=(" " "▏" "▎" "▍" "▌" "▋" "▊" "▉" "█")
 # Lookup: maps remainder 0-9 to eighth index (uniform distribution, duplicates at 3-4 and 7-8)
 EIGHTH_LOOKUP=(0 1 2 3 3 4 5 6 6 7)
 
-# Path to estimated usage script file (passed in from statusline command)
-USAGE_SCRIPT=""
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --usage-script)
-            if [ -z "$2" ]; then
-                echo "Error: --usage-script requires a value" >&2
-                exit 1
-            fi
-            usage_script_file_input="$2"
-            if [ ! -f "$usage_script_file_input" ]; then
-                echo "Error: usage script file not found: $usage_script_file_input"
-                exit 1
-            fi
-            USAGE_SCRIPT="$usage_script_file_input"
-            shift 2
-            ;;
-        --help)
-            echo "Usage: $0 --usage-script <path> [other options]"
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1" >&2
-            exit 1
-            ;;
-    esac
-done
-
-[ ! -z "$USAGE_SCRIPT" ] && HAS_USAGE_SCRIPT="true" || HAS_USAGE_SCRIPT="false"
-
 # ============================================================================
 # SCRIPT LOGIC
 # ============================================================================
-
-# Migration: Remove old state file if it exists (renamed to SESSION_STATE_FILE)
-OLD_RESET_TIME_FILE="$HOME/.claude_code_reset_time"
-if [ -f "$OLD_RESET_TIME_FILE" ]; then
-    rm -f "$OLD_RESET_TIME_FILE" 2>/dev/null
-fi
 
 # Read JSON from stdin
 JSON_INPUT=$(cat)
@@ -133,18 +87,6 @@ RATE_LIMIT_7D_RESETS_AT=$(echo "$JSON_INPUT" | jq -r '.rate_limits.seven_day.res
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
-# Function: check if usage script was passed
-has_usage_script() {
-    # echo "HAS_USAGE_SCRIPT: $HAS_USAGE_SCRIPT"
-    if [ "$HAS_USAGE_SCRIPT" = "true" ]; then
-        # echo "True"
-        return 0;
-    else
-        # echo "False"
-        return 1;
-    fi
-}
 
 # Function: Build a 10-character progress bar with fractional fill using eighth blocks
 # Usage: build_progress_bar <percentage>
@@ -187,76 +129,6 @@ build_progress_bar() {
     echo "$bar"
 }
 
-
-# Function: Calculate reset time from a session start epoch
-calculate_reset_time() {
-    local session_start_epoch=$1
-    local reset_time=$((session_start_epoch + SESSION_TIME_WINDOW_SIZE))
-    echo $reset_time
-}
-
-# Function: Parse ISO timestamp to epoch (handles both GNU date and BSD date)
-parse_iso_to_epoch() {
-    local iso_timestamp=$1
-    local epoch=""
-
-    # Try GNU date first (Linux)
-    epoch=$(date -d "$iso_timestamp" +%s 2>/dev/null)
-
-    # If GNU date failed, try BSD date (macOS)
-    if [ -z "$epoch" ] || [ "$epoch" = "" ]; then
-        epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${iso_timestamp:0:19}" +%s 2>/dev/null)
-    fi
-
-    # Validate result is a positive number
-    if [ -n "$epoch" ] && [ "$epoch" -gt 0 ] 2>/dev/null; then
-        echo "$epoch"
-    else
-        echo ""
-    fi
-}
-
-# Function: Find the first timestamp in transcript that is >= min_epoch
-# This finds the start of the current session window
-get_session_start_from_transcript() {
-    local transcript_path=$1
-    local min_epoch=$2
-
-    # Check if transcript exists and is readable
-    if [ ! -f "$transcript_path" ] || [ ! -r "$transcript_path" ]; then
-        echo ""
-        return
-    fi
-
-    # Find first timestamp >= min_epoch using jq
-    local first_valid_ts
-    first_valid_ts=$(jq -r --arg min_epoch "$min_epoch" '
-        select(.timestamp != null) |
-        .timestamp as $ts |
-        ($ts | sub("\\.[0-9]+"; "") | fromdateiso8601) as $epoch |
-        select($epoch >= ($min_epoch | tonumber)) |
-        $ts
-    ' < "$transcript_path" 2>/dev/null | head -1)
-
-    if [ -n "$first_valid_ts" ] && [ "$first_valid_ts" != "null" ]; then
-        echo "$first_valid_ts"
-    fi
-}
-
-# Function: Load stored reset time from shared state file
-# All Claude Code instances read from the same file
-load_stored_reset_time() {
-    if [ -f "$SESSION_STATE_FILE" ]; then
-        cat "$SESSION_STATE_FILE" 2>/dev/null
-    fi
-}
-
-# Function: Save reset time to shared state file
-# When any instance calculates a reset time, it propagates to all other instances
-save_reset_time() {
-    local reset_time=$1
-    echo "$reset_time" > "$SESSION_STATE_FILE"
-}
 
 # ============================================================================
 # STATUS LINE ELEMENT FUNCTIONS
@@ -396,13 +268,7 @@ build_rate_limit_line() {
         "${time_bar}" "${time_pct_whole}.${time_pct_decimal}%" "${reset_display}" "${remaining_display}"
 }
 
-# Function: Output both rate limit lines and sync session state
 get_rate_limits_element() {
-    # Sync 5-hour reset time to session state file for the estimation script
-    if [ -n "$RATE_LIMIT_5H_RESETS_AT" ]; then
-        save_reset_time "$RATE_LIMIT_5H_RESETS_AT"
-    fi
-
     build_rate_limit_line "5-HOUR" "$RATE_LIMIT_5H_USED_PCT" "$RATE_LIMIT_5H_RESETS_AT" "$SESSION_TIME_WINDOW_SIZE" "false"
     build_rate_limit_line "WEEKLY" "$RATE_LIMIT_7D_USED_PCT" "$RATE_LIMIT_7D_RESETS_AT" "604800" "true"
 }

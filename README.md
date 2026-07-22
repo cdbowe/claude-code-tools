@@ -12,7 +12,7 @@ Built for real-world development workflows: PRD-driven planning with parallel ex
 | Subagents | 11 | Specialized agents for PRD execution, code review, and conflict resolution |
 | Hooks | 4 | Event-driven automation (logging, validation, dispatch) |
 | Scripts | 25+ | Shell scripts for PRD orchestration, worktree management, and validation |
-| Status Line | 2 | Custom status bar with estimated + actual usage tracking |
+| Status Line | 1 | Custom status bar with context, cost, and rate limit tracking |
 
 ## Directory Structure
 
@@ -64,8 +64,7 @@ Built for real-world development workflows: PRD-driven planning with parallel ex
 │   ├── validate-prd-json.sh         # PreToolUse: validate PRD JSON on Write
 │   └── prd-plan-inject.sh           # UserPromptSubmit: intercept /prd plan
 └── statusline/
-    ├── statusline_script.sh         # Multi-line status bar (model, context, cost, reset)
-    └── est_claude_usage.sh          # Credit-based usage estimation + OAuth API comparison
+    └── statusline_script.sh         # Multi-line status bar (model, context, cost, rate limits)
 ```
 
 ## Commands (Skills)
@@ -178,78 +177,12 @@ Additionally, `settings.json` includes inline `jq` hooks that log all prompts an
 
 ## Status Line
 
-Two scripts work together to provide a rich multi-line status bar:
-
 ### `statusline_script.sh`
-Displays model name, context window usage with progress bar, working directory, session reset countdown, cost, and elapsed time.
+Multi-line status bar displaying model name, context window usage with progress bar, working directory, 5-hour and weekly rate limit usage with reset countdowns, cost, and elapsed time.
+
+Rate limit data (usage percentage and reset times) comes directly from Claude Code's JSON input — no estimation or external API calls needed.
 
 **Configurable**: timezone, time format, colors, progress bar characters, system overhead offset.
-
-### `est_claude_usage.sh`
-Estimates subscription usage percentage by scanning all `.jsonl` transcript files in `~/.claude/projects/`, calculating token costs across Opus/Sonnet/Haiku using official API pricing rates and credit coefficients.
-
-**Features**:
-- Per-model token breakdown (input, output, cache write 5m/1h, cache read)
-- Compaction token tracking (context summarization overhead)
-- Tool use overhead estimation
-- Web search cost tracking
-- Anthropic OAuth API integration for actual vs estimated comparison
-- Session window management (shared state across all Claude Code instances)
-- Historical usage data logging for coefficient calibration
-
-**Note about the OAuth API usage fetch + cooldown**: 
-
-The script was built with a cooldown timer in mind to prevent sending API fetch requests too frequently. I was hitting rate limit errors in my script, so I added this cooldown feature to find a balance in refreshes.
-
-**Modes**: `--statusline` (minimal output for status bar), `--debug` (verbose), `--enable-oauth-api` (fetch actual usage from Anthropic).
-
-### Tuning the Usage Estimator
-
-Anthropic doesn't publish how subscription credits are calculated, so the estimator uses reverse-engineered coefficients. You'll likely need to calibrate these for your plan and usage patterns.
-
-**The formula** (per model):
-
-```
-credits = (input + cw_5m × CW_5M_COEFF + cw_1h × CW_1H_COEFF) × INPUT_COEFF
-        + output × OUTPUT_COEFF
-        + cache_read × CR_COEFF × INPUT_COEFF
-        + compaction × COMPACTION_COEFF
-
-total = (opus_credits + sonnet_credits + haiku_credits) × CALIBRATION_MULTIPLIER + TOTAL_CREDITS_OFFSET
-usage_pct = total / SESSION_CREDIT_LIMIT × 100
-```
-
-**What to tune and when**:
-
-| Variable | Default | What it controls | When to change |
-|----------|---------|------------------|----------------|
-| `SESSION_CREDIT_LIMIT` | `6000000` | Total credits per 5-hour window | Different plan tier (Pro vs Max 5x vs Max 20x) |
-| `OPUS_INPUT_CREDIT_COEFF` | `0.833333` | Credits per input token (Opus) | Estimated consistently over/under actual |
-| `OPUS_OUTPUT_CREDIT_COEFF` | `4.166667` | Credits per output token (Opus) | Output-heavy sessions diverge from actual |
-| `SONNET_INPUT_CREDIT_COEFF` | `0.50` | Credits per input token (Sonnet) | Subagent-heavy workflows (Sonnet-dominated) |
-| `SONNET_OUTPUT_CREDIT_COEFF` | `2.5` | Credits per output token (Sonnet) | Same as above |
-| `HAIKU_INPUT_CREDIT_COEFF` | `0.166667` | Credits per input token (Haiku) | Haiku-heavy workflows |
-| `HAIKU_OUTPUT_CREDIT_COEFF` | `0.833333` | Credits per output token (Haiku) | Same as above |
-| `CACHE_WRITE_5M_COEFF` | `1.25` | Multiplier for 5-min cache writes | Cache-heavy sessions diverge |
-| `CACHE_WRITE_1H_COEFF` | `2.0` | Multiplier for 1-hour cache writes | Same as above |
-| `CACHE_READ_COEFF` | `0.0` | Multiplier for cache reads | If Anthropic starts charging for cache reads |
-| `CALIBRATION_MULTIPLIER` | `1.0` | Global multiplier on raw credits | Estimated consistently low across all models |
-| `TOTAL_CREDITS_OFFSET` | `0` | Additive offset on final credits | Fixed overhead not captured by tokens |
-| `API_CALL_COOLDOWN_DURATION` | `600` | The cooldown period between each API usage fetch request, in seconds | When you need slightly more frequent updates. Adjust only as necessary; fetching too frequently can hit rate limits on usage status |
-
-**Calibration workflow**:
-
-1. **Enable OAuth API** — pass `--enable-oauth-api` (or set `ENABLE_OAUTH_API=true` in `statusline_script.sh`). This fetches your actual usage percentage from `api.anthropic.com/api/oauth/usage`, with a 10-minute cooldown before the next fetch.
-
-2. **Compare estimated vs actual** — the status line shows both side by side. Run `./est_claude_usage.sh --enable-oauth-api` standalone for a detailed breakdown with the diff.
-
-3. **Check the data log** — every fresh API call with `actual > 0%` appends a row to `usage-data-log.txt` (pipe-delimited) with all token counts, coefficients, and both percentages. Use this to spot systematic drift.
-
-4. **Adjust coefficients** — if estimated consistently reads higher than actual, decrease the relevant coefficients (or `CALIBRATION_MULTIPLIER` for a global fix). If lower, increase them. The commented-out values in the script show previous calibration attempts.
-
-5. **Re-run** — changes take effect on the next status line update (no restart needed).
-
-**Key insight**: Subscription credit accounting differs from API billing. Cache writes are charged at `1×`/`2×` input price (not the `1.25×`/`2×` API rate), and cache reads appear to be **free** for subscriptions (`CACHE_READ_COEFF=0.0`). These differences were discovered through the calibration loop above.
 
 ## Settings
 
@@ -291,7 +224,7 @@ claude --add-dir /path/to/claude-code-tools
 3. Set your preferred model in `env.ANTHROPIC_MODEL`
 4. For `/worktree`: set up a bare git repository (see skill docs)
 5. For `/prime`: configure Serena MCP server and populate memory files
-6. For status line usage estimation: adjust `SESSION_CREDIT_LIMIT` and credit coefficients in `est_claude_usage.sh`
+6. For status line: review configurable options in `statusline_script.sh` (timezone, colors, etc.)
 
 ## Requirements
 
