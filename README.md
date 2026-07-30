@@ -4,6 +4,26 @@ A production-tested collection of custom skills, subagents, hooks, and scripts f
 
 Built for real-world development workflows: PRD-driven planning with parallel execution, git worktree orchestration, usage tracking, and more.
 
+## Why I Built This
+
+Coding agents fail predictably at scale: they one-shot large tasks, produce output that is confident, plausible, and wrong, and burn tokens on work a shell script could do for free. This toolkit is the workflow I built to solve that on a production codebase where I'm the only engineer.
+
+**Design principles**
+
+| Principle | Implementation |
+|-----------|----------------|
+| No one-shotting | Work decomposes into sequential phases; tasks parallelize *within* a phase |
+| Quality gates at boundaries | Review/validation layer between every wave — a phase can't advance on broken output |
+| Validate at agent handoffs | Schema validation between agents; pipeline self-corrects or stalls and escalates to a human |
+| Bounded retries | Failed tests retry up to N times, then stop and ask rather than looping |
+| Script-first orchestration | Deterministic work runs locally in bash — not paid for in tokens |
+| JSON over markdown | Structured state that `jq` reads and mutates cheaply, instead of rewriting prose files |
+| Model routing by cost | Expensive models only where task difficulty justifies them |
+| Backgrounded specialists | Purpose-built subagents keep the main context window clean |
+
+**Result:** a database migration originally scoped at ~6 months shipped in 2, with documentation and workflow state persisted to disk so long sessions don't re-pay for context.
+
+
 ## What's Included
 
 | Category | Count | Description |
