@@ -253,6 +253,50 @@ claude --add-dir /path/to/claude-code-tools
 - Git (bare repo setup required for `/worktree`)
 - Optional: [Serena MCP server](https://github.com/oraios/serena) (for `/prime` and agent code analysis tools)
 
+## Use in other workspaces
+
+`install.sh` copies these modules into a Claude Code config directory. It's the source of truth for the install layout, so it works whether you run it by hand or have [devcontainer-init](https://github.com/cdbowe/devcontainer-init) invoke it.
+
+```bash
+# Into your user config ($CLAUDE_CONFIG_DIR, else ~/.claude): settings.json + statusline
+./install.sh
+
+# Into a project's .claude/, and seed settings.local.json (won't overwrite an existing one)
+./install.sh --dir "$WORKSPACE_DIR/.claude" --with-local
+
+# The full toolkit (agents, commands, hooks too)
+./install.sh --all
+```
+
+| Flag | Effect |
+|------|--------|
+| `--dir TARGET` | Destination config dir. Default: `$CLAUDE_CONFIG_DIR`, else `~/.claude` |
+| `--minimal` | Copy `settings.json` + `statusline/` only *(default)* |
+| `--all` | Also copy `agents/`, `commands/`, `hooks/` |
+| `--with-local` | Also seed `settings.local.json` (only if absent, unless `--force`) |
+| `--force` | Overwrite `settings.local.json` even if it already exists |
+
+The install is idempotent and never clobbers an existing `settings.local.json` unless you pass `--force`.
+
+## Pairing with devcontainer-init
+
+[devcontainer-init](https://github.com/cdbowe/devcontainer-init)'s `claude-code` template can wire this repo into a freshly generated devcontainer automatically. Keep a checkout of `claude-code-tools` next to your project (a sibling `../claude-code-tools`), then generate with the template:
+
+```bash
+devcontainer-init --template claude-code   # wizard prompts for the checkout path
+```
+
+On container create it mounts this checkout read-only at `/opt/claude-code-tools` and runs `install.sh` twice:
+
+- into `$CLAUDE_CONFIG_DIR` (the shared `claude-code-home` volume) — `settings.json` + statusline, so the statusline works from any directory and survives rebuilds;
+- into `$WORKSPACE_DIR/.claude` with `--with-local` — project-scoped config plus a seeded `settings.local.json`.
+
+Because the project-scoped copy is bind-mounted back to the host, add this to your **project's** `.gitignore`:
+
+```gitignore
+.claude/settings.local.json
+```
+
 ## License
 
 MIT

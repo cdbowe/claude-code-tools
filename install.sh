@@ -11,8 +11,9 @@
 #   --dir TARGET   Destination config dir. Default: $CLAUDE_CONFIG_DIR, else ~/.claude
 #   --minimal      Copy settings.json + statusline/ only. (default)
 #   --all          Also copy agents/, commands/, hooks/.
-#   --with-local   Also seed settings.local.json (only if absent, unless --force).
-#   --force        Overwrite settings.local.json even if it already exists.
+#   --with-local   Create a fresh, empty settings.local.json if none exists.
+#                  Never copied from the repo — it's machine-local and yours.
+#   --force        Replace an existing settings.local.json with a fresh one.
 #
 # Examples:
 #   ./install.sh                                   # into ~/.claude (or $CLAUDE_CONFIG_DIR)
@@ -67,6 +68,19 @@ copy_item() {
   echo "  copy   $item"
 }
 
+# settings.local.json is machine-local: generated empty, never copied from the
+# repo, so a checkout's personal overrides can't leak into a new environment.
+write_fresh_local() {
+  cat > "$TARGET/settings.local.json" <<'JSON'
+{
+  "permissions": {
+    "allow": [],
+    "deny": []
+  }
+}
+JSON
+}
+
 mkdir -p "$TARGET"
 echo "Installing claude-code-tools ($MODE) -> $TARGET"
 
@@ -74,12 +88,13 @@ echo "Installing claude-code-tools ($MODE) -> $TARGET"
 copy_item "settings.json"
 copy_item "statusline"
 
-# --- optional project-local overrides (never clobber unless --force) ---
+# --- machine-local overrides: created fresh, never copied ---
 if [ "$WITH_LOCAL" -eq 1 ]; then
   if [ -e "$TARGET/settings.local.json" ] && [ "$FORCE" -eq 0 ]; then
-    echo "  keep   settings.local.json (exists; use --force to overwrite)"
+    echo "  keep   settings.local.json (exists; use --force to replace)"
   else
-    copy_item "settings.local.json"
+    write_fresh_local
+    echo "  create settings.local.json (empty)"
   fi
 fi
 

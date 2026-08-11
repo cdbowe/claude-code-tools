@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   gnupg2 \
   sudo \
   jq \
+  bc \
   less \
   procps \
   nano \
