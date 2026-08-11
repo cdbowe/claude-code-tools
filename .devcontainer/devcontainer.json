@@ -27,6 +27,7 @@
     "source=${localWorkspaceFolder}/.claude,target=${containerWorkspaceFolder}/.claude,type=bind,consistency=cached",
     "source=${localWorkspaceFolder}/.devcontainer,target=${containerWorkspaceFolder}/.devcontainer,type=bind,consistency=cached",
     "source=${localWorkspaceFolder}/.gitignore,target=${containerWorkspaceFolder}/.gitignore,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/install.sh,target=${containerWorkspaceFolder}/install.sh,type=bind,consistency=cached",
     "source=${localWorkspaceFolder}/LICENSE,target=${containerWorkspaceFolder}/LICENSE,type=bind,consistency=cached",
     "source=${localWorkspaceFolder}/README.md,target=${containerWorkspaceFolder}/README.md,type=bind,consistency=cached",
     "source=${localWorkspaceFolder}/README.md.bak,target=${containerWorkspaceFolder}/README.md.bak,type=bind,consistency=cached",
