@@ -1,0 +1,73 @@
+{
+    "hooks": {
+        "PreCompact": [
+            {
+                "matcher": "*",
+                "hooks": [
+                {
+                    "type": "command",
+                    "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/backup-conversation.sh"
+                }
+                ]
+            }
+        ],
+        "UserPromptSubmit": [
+            {
+                "matcher": "*",
+                "hooks": [
+                {
+                    "type": "command",
+                    "command": "jq -r '\"[\" + (now | strftime(\"%Y-%m-%d %H:%M:%S\")) + \"] \" + .hook_event_name + \": \" + (. | @json)' >> $CLAUDE_PROJECT_DIR/.claude/hooks-log.txt"
+                }
+                ]
+            },
+            {
+                "matcher": "^/prd(-v2)?\\s+plan(\\s|$)",
+                "hooks": [
+                {
+                    "type": "command",
+                    "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/prd-plan-inject.sh"
+                }
+                ]
+            }
+        ],
+        "PreToolUse": [
+            {
+                "matcher": "*",
+                "hooks": [
+                {
+                    "type": "command",
+                    "command": "jq -r '\"[\" + (now | strftime(\"%Y-%m-%d %H:%M:%S\")) + \"] \" + .tool_name + \": \" + (. | @json)' >> $CLAUDE_PROJECT_DIR/.claude/skill-log.txt"
+                }
+                ]
+            },
+            {
+                "matcher": "Skill",
+                "hooks": [
+                {
+                    "type": "command",
+                    "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/skill-dispatcher.sh"
+                }
+                ]
+            },
+            {
+                "matcher": "Write",
+                "hooks": [
+                {
+                    "type": "command",
+                    "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/validate-prd-json.sh"
+                }
+                ]
+            },
+            {
+                "matcher": "Agent",
+                "hooks": [
+                {
+                    "type": "command",
+                    "command": "$CLAUDE_PROJECT_DIR/.claude/commands/scripts/check-main.sh"
+                }
+                ]
+            }
+        ]
+    }
+}
