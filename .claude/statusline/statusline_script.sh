@@ -256,9 +256,9 @@ build_rate_limit_line() {
     # Format reset time
     local reset_display
     if [ "$show_day" = "true" ]; then
-        reset_display=$(date -d "@$resets_at" +"%a @ %-I:%M%p" 2>/dev/null || date -r "$resets_at" +"%a @ %l:%M%p" 2>/dev/null)
+        reset_display=$(date -d "@$resets_at" +"%a @ %-I:%M%p %Z" 2>/dev/null || date -r "$resets_at" +"%a @ %l:%M%p %Z" 2>/dev/null)
     else
-        reset_display=$(date -d "@$resets_at" +"%-I:%M%p" 2>/dev/null || date -r "$resets_at" +"%l:%M%p" 2>/dev/null)
+        reset_display=$(date -d "@$resets_at" +"%-I:%M%p %Z" 2>/dev/null || date -r "$resets_at" +"%l:%M%p %Z" 2>/dev/null)
     fi
     reset_display=$(echo "$reset_display" | sed 's/AM/am/; s/PM/pm/; s/^ //')
 
@@ -336,7 +336,7 @@ get_cost_element() {
 # Build status line from individual elements (multiline for readability, output as single line)
 
 # Debug: Output the entire JSON payload
-# echo "$JSON_INPUT" > "$WORKSPACE_DIR/.claude/statusline_data.json"
+echo "$JSON_INPUT" > "$WORKSPACE_DIR/.claude/statusline/statusline_data.json"
 
 echo -e "$(get_model_element) | $(get_context_element)"
 # Debug: Show debug display mode
