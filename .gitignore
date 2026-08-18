@@ -1,6 +1,1 @@
 *.bak
-
-.claude/statusline/usage-data-log.txt
-.claude/hooks-log.txt
-.claude/skill-log.txt
-.claude/statusline/statusline_data.json
