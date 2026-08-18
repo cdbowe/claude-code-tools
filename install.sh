@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#
+# 
 # install.sh — copy claude-code-tools modules into a Claude Code config dir.
 #
 # Source of truth for the install layout lives with the files it installs.
@@ -68,6 +68,18 @@ copy_item() {
   echo "  copy   $item"
 }
 
+# Copy an item whose repo location is unambiguous. Needed for .gitignore: the
+# repo root has its own (*.bak), and find_src would prefer it over .claude/.
+copy_from() {
+  local src="$SCRIPT_DIR/$1" dest="$2"
+  if [ ! -e "$src" ]; then
+    echo "  skip   $dest (not found in repo)"
+    return 0
+  fi
+  cp "$src" "$TARGET/$dest"
+  echo "  copy   $dest"
+}
+
 # settings.local.json is machine-local: generated empty, never copied from the
 # repo, so a checkout's personal overrides can't leak into a new environment.
 write_fresh_local() {
@@ -87,6 +99,7 @@ echo "Installing claude-code-tools ($MODE) -> $TARGET"
 # --- minimal set: statusline works out of the box ---
 copy_item "settings.json"
 copy_item "statusline"
+copy_from ".claude/.gitignore" ".gitignore"
 
 # --- machine-local overrides: created fresh, never copied ---
 if [ "$WITH_LOCAL" -eq 1 ]; then
