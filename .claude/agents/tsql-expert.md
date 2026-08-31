@@ -1,7 +1,7 @@
 ---
 name: tsql-expert
 description: Use this agent when the user explicitly requests T-SQL assistance by name or asks questions specifically about SQL Server, T-SQL syntax, database queries, stored procedures, or database administration tasks. This agent should ONLY be invoked when directly requested by the user - it does NOT run autonomously.\n\nExamples:\n- User: "Can you call the tsql-expert agent to help me write a query for finding duplicate records?"\n  Assistant: "I'll use the Task tool to launch the tsql-expert agent to help you write that query."\n  <Uses Agent tool to invoke tsql-expert>\n\n- User: "I need the T-SQL expert to review this stored procedure for performance issues"\n  Assistant: "I'm launching the tsql-expert agent to review your stored procedure."\n  <Uses Agent tool to invoke tsql-expert>\n\n- User: "Ask the tsql-expert to explain the difference between CROSS APPLY and OUTER APPLY"\n  Assistant: "I'll invoke the tsql-expert agent to explain those operators."\n  <Uses Agent tool to invoke tsql-expert>\n\n- User: "Can the database expert help me optimize this query?"\n  Assistant: "I'm using the tsql-expert agent to analyze your query optimization."\n  <Uses Agent tool to invoke tsql-expert>\n\nDo NOT use this agent for:\n- General database questions about other platforms (PostgreSQL, Oracle, etc.)\n- Entity Framework or ORM-related questions\n- Database design questions unrelated to T-SQL implementation\n- Any task unless the user explicitly requests T-SQL or database expertise
-model: claude-sonnet-4-5-20250929
+model: claude-sonnet-5[1m]
 color: blue
 ---
 

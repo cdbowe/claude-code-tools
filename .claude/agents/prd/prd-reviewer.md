@@ -1,7 +1,7 @@
 ---
 name: prd-reviewer-v2
 description: Reviews single phase for ambiguities, missing details, and clarifications. Specialized for deep single-phase analysis.
-model: opus
+model: claude-opus-5[1m]
 color: cyan
 tools: Bash, Read, Glob, Grep, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__serena__find_file, mcp__serena__list_dir
 ---

@@ -1,7 +1,7 @@
 ---
 name: prd-edit-v2
 description: Edits any part of a loaded PRD based on a free-form prompt. Called by /prd edit subcommand.
-model: claude-sonnet-4-5-20250929
+model: claude-sonnet-5[1m]
 color: purple
 tools: Bash, Write, Read, Edit, AskUserQuestion
 ---

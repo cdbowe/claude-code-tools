@@ -1,7 +1,7 @@
 ---
 name: prd-build-reviewer
 description: Reviews a single worker's changes in its worktree before merge. Can fix minor issues. Approves or rejects with findings.
-model: claude-sonnet-4-6
+model: claude-sonnet-5[1m]
 tools: Bash, Read, Edit, Write, Grep, Glob, mcp__serena__read_memory, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: conflict-resolver-v1
 description: Resolves git merge/rebase conflicts using semantic analysis
-model: claude-sonnet-4-5-20250929
+model: claude-sonnet-5[1m]
 color: orange
 tools: Bash, Read, Write, Edit, Grep, mcp__serena__find_symbol, mcp__serena__search_for_pattern, mcp__serena__get_symbols_overview
 ---

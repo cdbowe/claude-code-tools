@@ -1,7 +1,7 @@
 ---
 name: prd-retrospective-v1
 description: Analyzes build results, identifies root causes, documents learnings, generates unblock plans
-model: claude-sonnet-4-5-20250929
+model: claude-sonnet-5[1m]
 color: purple
 tools: Bash, Read, Glob, Grep, mcp__serena__write_memory, mcp__serena__read_memory, mcp__serena__list_memories, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__serena__find_file, mcp__serena__list_dir
 ---
@@ -146,7 +146,8 @@ Create `/tmp/.prd_unblock_plan.json` using existing schema:
       "taskId": "UNBLOCK-9.3",
       "taskName": "Add login route to router",
       "taskType": "edit-file",
-      "model": "sonnet",
+      "modelTier": "sonnet",
+      "model": "claude-sonnet-5[1m]",
       "originalBlockedTask": "9.3",
       "resolution": "Add /login route to AppRoutes.tsx",
       "targetFiles": ["src/AppRoutes.tsx"],
@@ -156,7 +157,8 @@ Create `/tmp/.prd_unblock_plan.json` using existing schema:
       "taskId": "RETRY-9.3",
       "taskName": "Retry: Create login tests",
       "taskType": "generate-test",
-      "model": "sonnet",
+      "modelTier": "sonnet",
+      "model": "claude-sonnet-5[1m]",
       "originalBlockedTask": "9.3",
       "resolution": "Re-attempt test generation now that route exists",
       "targetFiles": ["tests/e2e/login.spec.ts"],

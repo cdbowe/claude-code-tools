@@ -1,7 +1,7 @@
 ---
 name: prd-gen-v2
 description: Generates a new PRD from a goal prompt. Called by /prd gen subcommand.
-model: claude-opus-4-5-20251101
+model: claude-opus-5[1m]
 color: purple
 tools: Bash, Write, Read, Edit, Glob, Grep, AskUserQuestion, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__find_file, mcp__serena__list_dir, mcp__serena__list_memories, mcp__serena__read_memory
 ---

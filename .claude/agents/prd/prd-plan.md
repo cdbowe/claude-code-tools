@@ -1,7 +1,7 @@
 ---
 name: prd-plan-v2
 description: Generates wave-based execution plan for the loaded phase. Called by /prd plan subcommand.
-model: claude-sonnet-4-5-20250929
+model: claude-sonnet-5[1m]
 color: yellow
 tools: Bash, Write, Read
 ---
@@ -9,6 +9,13 @@ tools: Bash, Write, Read
 # PRD Plan Agent
 
 Analyzes phase tasks and generates wave-based parallel execution plan with dependency ordering.
+
+> **This agent is the fallback path, not the live one.** `/prd plan` is handled by
+> the `prd-plan-inject.sh` UserPromptSubmit hook, which runs `prd-plan.sh` (wave
+> computation + model assignment) and `prd-display.sh` before the orchestrator sees
+> the prompt — `prd.md` never spawns `prd-plan-v2`. Use this agent only when the
+> script path is unavailable, and keep its output byte-compatible with what
+> `prd-plan.sh` produces: same schema, same field names, same model resolution.
 
 ## Prerequisites
 
@@ -52,7 +59,8 @@ Write to `/tmp/.prd_plan.json`:
 | `taskId` | string | Task ID from phase JSON |
 | `taskName` | string | Task name |
 | `taskType` | string | Task type |
-| `model` | string | "sonnet" or "haiku" |
+| `modelTier` | string | Tier alias: `opus`, `sonnet`, or `haiku` |
+| `model` | string | Concrete model version resolved from that tier |
 | `targetFiles` | array | Files this task modifies |
 
 ### Example
@@ -68,17 +76,17 @@ Write to `/tmp/.prd_plan.json`:
       "waveId": 0,
       "useWorktrees": true,
       "tasks": [
-        {"taskId": "3.1", "taskName": "Update SearchListAccountsPageObject", "taskType": "edit-file", "model": "haiku", "targetFiles": ["..."]},
-        {"taskId": "3.2", "taskName": "Update CreateEditAccountPageObject", "taskType": "edit-file", "model": "haiku", "targetFiles": ["..."]},
-        {"taskId": "3.3", "taskName": "Update AccountSearchDetailPageObject", "taskType": "edit-file", "model": "haiku", "targetFiles": ["..."]}
+        {"taskId": "3.1", "taskName": "Update SearchListAccountsPageObject", "taskType": "edit-file", "modelTier": "haiku", "model": "claude-haiku-4-5", "targetFiles": ["..."]},
+        {"taskId": "3.2", "taskName": "Update CreateEditAccountPageObject", "taskType": "edit-file", "modelTier": "haiku", "model": "claude-haiku-4-5", "targetFiles": ["..."]},
+        {"taskId": "3.3", "taskName": "Generate AccountSearch tests", "taskType": "generate-test", "modelTier": "sonnet", "model": "claude-sonnet-5[1m]", "targetFiles": ["..."]}
       ]
     },
     {
       "waveId": 1,
       "useWorktrees": true,
       "tasks": [
-        {"taskId": "3.11", "taskName": "Update SearchListAccountsTests", "taskType": "edit-file", "model": "haiku", "targetFiles": ["..."]},
-        {"taskId": "3.12", "taskName": "Update AccountDetailsTests", "taskType": "edit-file", "model": "haiku", "targetFiles": ["..."]}
+        {"taskId": "3.11", "taskName": "Update SearchListAccountsTests", "taskType": "edit-file", "modelTier": "haiku", "model": "claude-haiku-4-5", "targetFiles": ["..."]},
+        {"taskId": "3.12", "taskName": "Update AccountDetailsTests", "taskType": "edit-file", "modelTier": "haiku", "model": "claude-haiku-4-5", "targetFiles": ["..."]}
       ]
     }
   ]
@@ -149,12 +157,21 @@ Apply topological level algorithm above.
 
 ### 4. Assign models per task
 
-| taskType | Model |
-|----------|-------|
-| `generate-test` | sonnet |
-| `create-file` (complex logic) | sonnet |
-| `create-file` (simple/mechanical) | haiku |
-| `edit-file`, `refactor`, `rename`, `verify` | haiku |
+**Do not invent the mapping.** Task type → tier → concrete version is configuration,
+not a judgment call, and it lives in `.claude/prd-models.json`. Resolve it:
+
+```bash
+bash "$WORKSPACE_DIR/.claude/commands/prd/scripts/prd-model.sh" tier-for <taskType>   # -> tier alias
+bash "$WORKSPACE_DIR/.claude/commands/prd/scripts/prd-model.sh" task-type <taskType>  # -> concrete version
+bash "$WORKSPACE_DIR/.claude/commands/prd/scripts/prd-model.sh" --list                # -> full table
+```
+
+Emit **both** fields on every task: `modelTier` (the alias, used by validation and
+display) and `model` (the exact version passed to `Task(model: ...)`).
+
+A task type absent from `taskTypes` falls back to `defaultTaskTier`. A tier that
+doesn't resolve is an error, not an empty string — `prd-model.sh` exits non-zero
+and names the valid tiers.
 
 ### 5. Set worktree flags
 - `useWorktrees = true` if wave has 2+ tasks

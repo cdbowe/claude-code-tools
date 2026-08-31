@@ -1,7 +1,7 @@
 ---
 name: prd-unblock-v2
 description: Investigates blocked tasks and generates an unblock execution plan. Called by /prd unblock subcommand.
-model: claude-sonnet-4-5-20250929
+model: claude-sonnet-5[1m]
 color: orange
 tools: Bash, Write, Read, Glob, Grep, AskUserQuestion, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__find_file, mcp__serena__list_dir
 ---
@@ -147,13 +147,24 @@ Create a flat list of resolution tasks with dependencies. The compile script han
 
 ### 6. Assign models
 
-| Resolution Type | Model |
-|-----------------|-------|
+**Do not invent versions.** Tier → concrete version lives in `.claude/prd-models.json`.
+Pick the tier from the table below, then resolve it:
+
+```bash
+bash "$WORKSPACE_DIR/.claude/commands/prd/scripts/prd-model.sh" tier <opus|sonnet|haiku>
+```
+
+| Resolution Type | Tier |
+|-----------------|------|
 | Create new file (complex logic) | sonnet |
 | Create new file (simple/boilerplate) | sonnet |
 | Fix existing file | sonnet |
 | Verify-retry | sonnet |
 | Clarification follow-up | haiku |
+
+Emit **both** fields on every resolution task: `modelTier` (the alias) and `model`
+(the resolved version). `prd-unblock-compile.sh` passes `model` straight to
+`Task(model: ...)`, and `prd-validate-unblock-plan.sh` checks `modelTier`.
 
 ### 7. Write `/tmp/.prd_unblock_plan.json` using Bash heredoc
 
@@ -182,7 +193,8 @@ cat > /tmp/.prd_unblock_plan.json << 'EOF'
       "taskId": "UNBLOCK-3.2",
       "taskName": "Create IUserRepository interface",
       "taskType": "create-file",
-      "model": "sonnet",
+      "modelTier": "sonnet",
+      "model": "claude-sonnet-5[1m]",
       "originalBlockedTask": "3.2",
       "resolution": "Create the missing IUserRepository interface that UserService depends on",
       "targetFiles": ["src/Interfaces/IUserRepository.cs"],
@@ -192,7 +204,8 @@ cat > /tmp/.prd_unblock_plan.json << 'EOF'
       "taskId": "RETRY-3.2",
       "taskName": "Retry: Create UserService",
       "taskType": "create-file",
-      "model": "haiku",
+      "modelTier": "haiku",
+      "model": "claude-haiku-4-5",
       "originalBlockedTask": "3.2",
       "resolution": "Re-attempt task now that IUserRepository exists",
       "targetFiles": ["src/Services/UserService.cs"],
@@ -202,7 +215,8 @@ cat > /tmp/.prd_unblock_plan.json << 'EOF'
       "taskId": "RETRY-3.3",
       "taskName": "Retry: Create ProductService",
       "taskType": "create-file",
-      "model": "haiku",
+      "modelTier": "haiku",
+      "model": "claude-haiku-4-5",
       "originalBlockedTask": "3.3",
       "resolution": "Re-attempt task (no blocking dependencies)",
       "targetFiles": ["src/Services/ProductService.cs"],
@@ -294,7 +308,8 @@ Do NOT include these fields:
 | `taskId` | string | Yes | UNBLOCK-X.Y or RETRY-X.Y format |
 | `taskName` | string | Yes | Description of resolution work |
 | `taskType` | string | Yes | create-file, edit-file, verify, etc. |
-| `model` | string | Yes | "haiku", "sonnet", or "opus" |
+| `modelTier` | string | Yes | Tier alias: "haiku", "sonnet", or "opus" |
+| `model` | string | Yes | Concrete version from `prd-model.sh tier <alias>` |
 | `originalBlockedTask` | string | Yes | Reference to original blocked task ID |
 | `resolution` | string | Yes | What this task does to resolve the blocker |
 | `targetFiles` | array | No | Files to create/modify |

@@ -1,7 +1,7 @@
 ---
 name: prd-worker-v2
 description: Executes assigned PRD build tasks (phase or infra) and writes structured results
-model: claude-sonnet-4-5-20250929
+model: claude-sonnet-5[1m]
 color: green
 tools: Bash, Write, Read, Edit, Glob, Grep, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__find_file, mcp__serena__list_dir
 ---
@@ -38,7 +38,7 @@ Write to `/tmp/.prd_agent_[agentId]_results.json`:
 | `agentId` | string | Yes | Agent ID from prompt |
 | `taskIds` | array | Yes | Task IDs assigned to agent |
 | `status` | string | Yes | "in_progress", "complete", or "blocked" |
-| `model` | string | Yes | Model name from prompt (e.g., "sonnet", "haiku", "opus") |
+| `model` | string | Yes | Exact model version from your prompt (e.g., "claude-sonnet-5[1m]") |
 | `filesModified` | array | Yes | Paths to modified files |
 | `filesCreated` | array | Yes | Paths to created files |
 | `notes` | string | Yes | Brief summary or progress notes |
@@ -68,7 +68,7 @@ cat > /tmp/.prd_agent_W0-T0_results.json << 'EOF'
   "waveId": 0,
   "taskIds": ["5.1", "5.2"],
   "status": "in_progress",
-  "model": "sonnet",
+  "model": "claude-sonnet-5[1m]",
   "filesModified": [],
   "filesCreated": [],
   "worktree": "wt-prd-5-W0-T0",
@@ -220,7 +220,7 @@ cat > /tmp/.prd_agent_W0-T0_results.json << 'EOF'
   "waveId": 0,
   "taskIds": ["9.1"],
   "status": "blocked",
-  "model": "sonnet",
+  "model": "claude-sonnet-5[1m]",
   "filesModified": ["tests/e2e/login.spec.ts"],
   "filesCreated": [],
   "postValidationPassed": {"9.1": false},
@@ -254,7 +254,7 @@ cat > /tmp/.prd_agent_W0-T0_results.json << 'EOF'
   "waveId": 0,
   "taskIds": ["5.1", "5.2"],
   "status": "blocked",
-  "model": "sonnet",
+  "model": "claude-sonnet-5[1m]",
   "filesModified": [],
   "filesCreated": [],
   "worktree": "wt-prd-5-W0-T0",
@@ -307,7 +307,7 @@ cat > /tmp/.prd_agent_W0-T0_results.json << 'EOF'
   "waveId": 0,
   "taskIds": ["9.1", "9.2"],
   "status": "complete",
-  "model": "sonnet",
+  "model": "claude-sonnet-5[1m]",
   "filesModified": ["tests/e2e/login.spec.ts"],
   "filesCreated": ["tests/e2e/dashboard.spec.ts"],
   "worktree": "wt-prd-9-W0-T0",
