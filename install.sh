@@ -11,9 +11,9 @@
 #   --dir TARGET   Destination config dir. Default: $CLAUDE_CONFIG_DIR, else ~/.claude
 #   --minimal      Copy settings.json + statusline/ only. (default)
 #   --all          Also copy agents/, commands/, hooks/.
-#   --with-local   Create a fresh, empty settings.local.json if none exists.
-#                  Never copied from the repo — it's machine-local and yours.
-#   --force        Replace an existing settings.local.json with a fresh one.
+#   --with-local   Seed settings.local.json if none exists — from the repo's
+#                  copy when it has one, else a fresh empty scaffold.
+#   --force        Re-seed an existing settings.local.json from the repo's copy.
 #
 # Examples:
 #   ./install.sh                                   # into ~/.claude (or $CLAUDE_CONFIG_DIR)
@@ -80,9 +80,24 @@ copy_from() {
   echo "  copy   $dest"
 }
 
-# settings.local.json is machine-local: generated empty, never copied from the
-# repo, so a checkout's personal overrides can't leak into a new environment.
-write_fresh_local() {
+# settings.local.json is seeded from the repo's copy when it has one, so a new
+# environment starts with the same hooks/permissions as the checkout. Falls back
+# to an empty scaffold when the repo has none, which keeps this working for a
+# checkout that treats the file as untracked and machine-local.
+write_local() {
+  local src
+  if src="$(find_src "settings.local.json")"; then
+    # Guard the self-install case (TARGET == the repo's own .claude/), where
+    # `cp` onto the same file would abort the script under `set -e`.
+    if [ "$src" -ef "$TARGET/settings.local.json" ]; then
+      echo "  keep   settings.local.json (target is the repo copy)"
+      return 0
+    fi
+    cp "$src" "$TARGET/settings.local.json"
+    echo "  copy   settings.local.json (from repo)"
+    return 0
+  fi
+
   cat > "$TARGET/settings.local.json" <<'JSON'
 {
   "permissions": {
@@ -91,6 +106,7 @@ write_fresh_local() {
   }
 }
 JSON
+  echo "  create settings.local.json (empty; none in repo)"
 }
 
 mkdir -p "$TARGET"
@@ -101,13 +117,12 @@ copy_item "settings.json"
 copy_item "statusline"
 copy_from ".claude/.gitignore" ".gitignore"
 
-# --- machine-local overrides: created fresh, never copied ---
+# --- local overrides: seeded from the repo's copy when it has one ---
 if [ "$WITH_LOCAL" -eq 1 ]; then
   if [ -e "$TARGET/settings.local.json" ] && [ "$FORCE" -eq 0 ]; then
-    echo "  keep   settings.local.json (exists; use --force to replace)"
+    echo "  keep   settings.local.json (exists; use --force to re-seed from repo)"
   else
-    write_fresh_local
-    echo "  create settings.local.json (empty)"
+    write_local
   fi
 fi
 
