@@ -314,6 +314,7 @@ for f in "$PRD_DIR"/phase_*.json; do
     total_tasks=$((total_tasks + t))
     total_complete=$((total_complete + c))
 done
+shopt -u nullglob
 
 if [ "$total_tasks" -gt 0 ]; then
     total_pct=$((total_complete * 100 / total_tasks))
@@ -342,7 +343,7 @@ if [ "$phase_blocked" -gt 0 ] || [ "$pv_warning_count" -gt 0 ]; then
     needs_retrospective=true
 fi
 # Also check for conflict files
-if ls /tmp/.prd_conflict_*.json 1>/dev/null 2>&1; then
+if compgen -G "/tmp/.prd_conflict_*.json" >/dev/null; then
     needs_retrospective=true
 fi
 
