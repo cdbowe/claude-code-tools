@@ -11,7 +11,11 @@ BRANCH="$3"
 RESULT_JSON_PATH="$4"
 OUTPUT_FILE="/tmp/.prd_precheck_${AGENT_ID}.json"
 
-WORKSPACE_DIR="${WORKSPACE_DIR:-/workspaces/bankjet}"
+if [ -z "${WORKSPACE_DIR:-}" ]; then
+    echo '{"status":"error","error":"WORKSPACE_DIR environment variable is not set"}'
+    exit 1
+fi
+
 RUN_CAPTURE="${WORKSPACE_DIR}/.claude/commands/scripts/run-and-capture.sh"
 WORKSPACE_BUILD="/tmp/claude-workspace/scripts/pre-check-build.sh"
 

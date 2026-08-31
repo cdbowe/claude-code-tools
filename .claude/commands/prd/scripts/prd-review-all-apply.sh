@@ -9,8 +9,15 @@ set -e
 STATE_FILE="/tmp/.prd_state"
 FINDINGS_FILE="/tmp/.prd_review_all_findings.json"
 OUTPUT_FILE="/tmp/.prd_review_all_edits.json"
-SCRIPTS_DIR="/tmp/claude-shared/commands/prd/scripts"
-PRD_BASE="${WORKSPACE_DIR:-/workspaces/bankjet}/claude_files/PRDs"
+if [ -z "${WORKSPACE_DIR:-}" ]; then
+    echo '{"status":"error","error":"WORKSPACE_DIR environment variable is not set"}'
+    exit 1
+fi
+
+# This script lives in the scripts dir it calls into, so resolve from its own
+# location. PRD_SCRIPTS_DIR overrides for non-standard layouts.
+SCRIPTS_DIR="${PRD_SCRIPTS_DIR:-${WORKSPACE_DIR}/.claude/commands/prd/scripts}"
+PRD_BASE="${WORKSPACE_DIR}/claude_files/PRDs"
 
 # Read state
 if [ ! -f "$STATE_FILE" ]; then

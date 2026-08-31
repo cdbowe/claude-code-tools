@@ -9,8 +9,14 @@
 #   {"status":"none","blockedCount":0}     — no blocked tasks
 #   {"status":"error","error":"..."}       — missing state/files
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 STATE_FILE="/tmp/.prd_state"
 OUTPUT_FILE="/tmp/.prd_unblock_plan.json"
+
+# Retry-task model comes from prd-models.json (role: unblock-plan), not a literal.
+RETRY_TIER=$(bash "$SCRIPT_DIR/prd-model.sh" role-tier unblock-plan)
+RETRY_MODEL=$(bash "$SCRIPT_DIR/prd-model.sh" role unblock-plan)
 
 # Read state
 if [ ! -f "$STATE_FILE" ]; then
@@ -109,11 +115,14 @@ for ((i=0; i<blocked_count; i++)); do
         --arg original "$task_id" \
         --arg resolution "$resolution" \
         --argjson targets "$target_files" \
+        --arg modelTier "$RETRY_TIER" \
+        --arg model "$RETRY_MODEL" \
         '{
             taskId: $tid,
             taskName: $name,
             taskType: "verify-retry",
-            model: "sonnet",
+            modelTier: $modelTier,
+            model: $model,
             originalBlockedTask: $original,
             resolution: $resolution,
             targetFiles: $targets,

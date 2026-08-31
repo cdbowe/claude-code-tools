@@ -106,6 +106,7 @@ for ((w=0; w<wave_count; w++)); do
         task_name=$(echo "$task_spec" | jq -r '.taskName')
         task_type=$(echo "$task_spec" | jq -r '.taskType')
         model=$(echo "$task_spec" | jq -r '.model')
+        model_tier=$(echo "$task_spec" | jq -r '.modelTier // ""')
         # Strip 'main/' prefix from target files - agents work in worktrees with relative paths
         target_files=$(echo "$task_spec" | jq -c '.targetFiles | map(if startswith("main/") then .[5:] else . end)')
 
@@ -415,6 +416,7 @@ PROMPT_EOF
             --argjson useWorktrees "$use_worktrees" \
             --arg taskId "$task_id" \
             --arg taskName "$task_name" \
+            --arg modelTier "$model_tier" \
             --arg model "$model" \
             --arg worktree "$worktree_name" \
             --arg branch "$branch_name" \
@@ -425,6 +427,7 @@ PROMPT_EOF
                 useWorktrees: $useWorktrees,
                 taskId: $taskId,
                 taskName: $taskName,
+                modelTier: $modelTier,
                 model: $model,
                 worktree: (if $worktree == "" then null else $worktree end),
                 branch: (if $branch == "" then null else $branch end),

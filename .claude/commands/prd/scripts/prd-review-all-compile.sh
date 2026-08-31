@@ -5,6 +5,8 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Validate WORKSPACE_DIR is set and valid
 if [ -z "$WORKSPACE_DIR" ]; then
     echo '{"status":"error","error":"WORKSPACE_DIR environment variable is not set"}'
@@ -25,6 +27,10 @@ CACHE_FILE="/tmp/.prd_source_cache.json"
 PASS_TRACKER="/tmp/.prd_review_pass_tracker"
 PRD_BASE="$WORKSPACE_DIR/claude_files/PRDs"
 MAX_PARALLEL="${1:-10}"
+
+# Reviewer model comes from prd-models.json (role: phase-reviewer), not a literal.
+REVIEWER_TIER=$(bash "$SCRIPT_DIR/prd-model.sh" role-tier phase-reviewer)
+REVIEWER_MODEL=$(bash "$SCRIPT_DIR/prd-model.sh" role phase-reviewer)
 
 # Reset pass tracker on fresh compile (new review-all session)
 rm -f "$PASS_TRACKER"
@@ -206,9 +212,10 @@ PROMPT_EOF
         --arg phaseId "$phase_id" \
         --arg phaseFile "$phase_file" \
         --arg phaseName "$phase_name" \
-        --arg model "opus" \
+        --arg modelTier "$REVIEWER_TIER" \
+        --arg model "$REVIEWER_MODEL" \
         --arg prompt "$prompt" \
-        '{agentId: $agentId, phaseId: $phaseId, phaseFile: $phaseFile, phaseName: $phaseName, model: $model, prompt: $prompt}')
+        '{agentId: $agentId, phaseId: $phaseId, phaseFile: $phaseFile, phaseName: $phaseName, modelTier: $modelTier, model: $model, prompt: $prompt}')
     agents=$(echo "$agents" | jq --argjson obj "$agent_obj" '. + [$obj]')
 done
 

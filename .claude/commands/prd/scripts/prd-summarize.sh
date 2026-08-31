@@ -6,7 +6,12 @@ set -e
 
 STATE_FILE="/tmp/.prd_state"
 OUTPUT_FILE="/tmp/.prd_summarize.json"
-PRD_BASE="${WORKSPACE_DIR:-/workspaces/bankjet}/claude_files/PRDs"
+if [ -z "${WORKSPACE_DIR:-}" ]; then
+    echo '{"status":"error","error":"WORKSPACE_DIR environment variable is not set"}'
+    exit 1
+fi
+
+PRD_BASE="${WORKSPACE_DIR}/claude_files/PRDs"
 
 PHASE_NUM="${1:-}"
 

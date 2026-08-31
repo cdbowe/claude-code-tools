@@ -177,7 +177,7 @@ EOF
 ### 7. Validate
 
 ```bash
-bash /tmp/claude-shared/commands/prd/scripts/prd-validate-plan.sh /tmp/.prd_plan.json
+bash "$WORKSPACE_DIR/.claude/commands/prd/scripts/prd-validate-plan.sh" /tmp/.prd_plan.json
 ```
 
 If validation fails, fix JSON and re-validate.

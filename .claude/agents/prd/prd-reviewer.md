@@ -416,7 +416,7 @@ EOF
 ### 11. Validate
 
 ```bash
-bash /tmp/claude-shared/commands/prd/scripts/prd-validate.sh [OUTPUT_PATH] review
+bash "$WORKSPACE_DIR/.claude/commands/prd/scripts/prd-validate.sh" [OUTPUT_PATH] review
 ```
 
 If validation fails, fix JSON and re-validate.

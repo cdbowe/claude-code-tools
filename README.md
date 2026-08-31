@@ -272,11 +272,70 @@ claude --add-dir /path/to/claude-code-tools
 |------|--------|
 | `--dir TARGET` | Destination config dir. Default: `$CLAUDE_CONFIG_DIR`, else `~/.claude` |
 | `--minimal` | Copy `settings.json` + `statusline/` only *(default)* |
-| `--all` | Also copy `agents/`, `commands/`, `hooks/` |
+| `--all` | Also copy `agents/`, `commands/`, `hooks/`, `rules/`, and set up the `/prd` environment |
 | `--with-local` | Also seed `settings.local.json` (only if absent, unless `--force`) |
-| `--force` | Overwrite `settings.local.json` even if it already exists |
+| `--force` | Re-seed `settings.local.json` from the repo's copy even if it already exists |
+| `--no-prd-env` | Skip the `/prd` environment setup that `--all` performs |
 
 The install is idempotent and never clobbers an existing `settings.local.json` unless you pass `--force`.
+
+### `/prd` environment setup
+
+Copying files is necessary but not sufficient for `/prd` — it also needs an executable script set, a PRD base dir, and a **split bare-repo git layout**. With `--all`, and only when `--dir` points at `$WORKSPACE_DIR/.claude`, `install.sh` does the parts that are safe and idempotent:
+
+- `chmod +x` on the installed hooks and command scripts (bind mounts routinely drop the bit, and `Bash(chmod:*)` is denied in `settings.json`, so it can't be repaired from inside a session);
+- `mkdir -p $WORKSPACE_DIR/claude_files/PRDs`.
+
+It then runs `prd-doctor.sh` and **reports** what it won't do on its own. It never runs `git init`, creates branches, or relocates a checkout into `main/` — restructuring a working tree unattended from `postCreateCommand` is destructive.
+
+`/prd build` is worktree-based and expects the primary checkout at `$WORKSPACE_DIR/main` with worktrees under `$WORKSPACE_DIR/worktrees` (override the former with `WORKTREE_MAIN_DIR`). A plain `git init` at the workspace root does **not** satisfy this.
+
+### Runtime dependencies
+
+`/prd` needs these on `PATH` in the container. `install.sh` cannot install them — `prd-doctor.sh` reports a missing one as a hard failure.
+
+| Binary | Needed by | Breaks if missing |
+|--------|-----------|-------------------|
+| `jq` | every PRD script | all of `/prd` |
+| `python3` | `prd-plan.sh`, `prd-unblock-compile.sh` (topological sort + wave splitting) | `/prd plan`, `/prd unblock` |
+| `git` | `worktree-*.sh`, `commit-main.sh` | `/prd build` |
+
+This repo's `.devcontainer/Dockerfile` installs all three. **If you consume this toolkit from a devcontainer generated elsewhere, add `python3` to that image** — `jq` and `git` are usually present already, `python3` often is not on `debian:*-slim` bases.
+
+### Model versions per tier
+
+`/prd` picks a model per task type. Both the task-type→tier map and the exact version each tier resolves to live in **`.claude/prd-models.json`**, which `install.sh --all` copies into the target so a new environment runs the versions pinned in this repo.
+
+```json
+"tiers":    { "opus": "claude-opus-5[1m]", "sonnet": "claude-sonnet-5[1m]", "haiku": "claude-haiku-4-5" },
+"taskTypes": { "generate-test": "sonnet", "create-file": "sonnet", "verify": "sonnet" },
+"defaultTaskTier": "haiku",
+"roles":    { "phase-reviewer": "opus", "unblock-plan": "sonnet", "unblock-task": "haiku" }
+```
+
+To pin a different version, edit `tiers` — nothing else references a version string. To change which tier a task type gets, edit `taskTypes`. `roles` covers the three non-worker decisions (phase reviewers, unblock planning, unblock retries).
+
+Inspect what everything resolves to:
+
+```bash
+bash "$WORKSPACE_DIR/.claude/commands/prd/scripts/prd-model.sh" --list
+```
+
+Plans carry both `modelTier` (the alias, used for validation and display) and `model` (the exact version passed to `Task(model: ...)`), so `/prd plan` shows the version each task will actually run on. A task type mapped to a tier that doesn't exist is a hard error, not a silent fallback — `prd-doctor.sh` checks for it.
+
+| Tier | Default | Input / output per MTok | Context |
+|------|---------|------------------------|---------|
+| `opus` | `claude-opus-5[1m]` | $5 / $25 | 1M |
+| `sonnet` | `claude-sonnet-5[1m]` | $3 / $15 | 1M |
+| `haiku` | `claude-haiku-4-5` | $1 / $5 | 200K |
+
+Diagnose a broken `/prd` at any time, without re-installing:
+
+```bash
+bash "$WORKSPACE_DIR/.claude/commands/prd/scripts/prd-doctor.sh"   # --strict to fail on build-only warnings
+```
+
+`FAIL` blocks all of `/prd`; `WARN` affects only `/prd build` or self-heals on first use. Exit code is non-zero only on `FAIL` (or any finding under `--strict`).
 
 ## Pairing with devcontainer-init
 
@@ -290,6 +349,8 @@ On container create it mounts this checkout read-only at `/opt/claude-code-tools
 
 - into `$CLAUDE_CONFIG_DIR` (the shared `claude-code-home` volume) — `settings.json` + statusline, so the statusline works from any directory and survives rebuilds;
 - into `$WORKSPACE_DIR/.claude` with `--with-local` — project-scoped config plus a seeded `settings.local.json`.
+
+If you use `--all` to get `/prd`, the generated image also needs `jq` and `python3` (see [Runtime dependencies](#runtime-dependencies)) — `install.sh` copies files but cannot install packages. Run `prd-doctor.sh` after the first build to confirm.
 
 Because the project-scoped copy is bind-mounted back to the host, add this to your **project's** `.gitignore`:
 

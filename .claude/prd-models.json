@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "Single source of truth for which Claude model version the /prd pipeline uses.",
+    "Edit `tiers` to pin a different version; everything else references a tier by name.",
+    "install.sh --all copies this file into the target .claude/ dir.",
+    "Resolve values with: commands/prd/scripts/prd-model.sh --list",
+    "",
+    "Verified 2026-08-31. Pricing is per million tokens (input / output):",
+    "  claude-opus-5      $5 / $25    1M context, 128K max output",
+    "  claude-sonnet-5    $3 / $15    1M context, 128K max output",
+    "  claude-haiku-4-5   $1 / $5     200K context, 64K max output",
+    "The [1m] suffix pins Claude Code's 1M-context variant, matching",
+    "settings.json ANTHROPIC_MODEL. Haiku 4.5 is 200K only, so it takes no suffix."
+  ],
+
+  "tiers": {
+    "opus": "claude-opus-5[1m]",
+    "sonnet": "claude-sonnet-5[1m]",
+    "haiku": "claude-haiku-4-5"
+  },
+
+  "taskTypes": {
+    "generate-test": "sonnet",
+    "create-file": "sonnet",
+    "verify": "sonnet"
+  },
+
+  "defaultTaskTier": "haiku",
+
+  "roles": {
+    "phase-reviewer": "opus",
+    "unblock-plan": "sonnet",
+    "unblock-task": "haiku"
+  }
+}

@@ -6,6 +6,8 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Parse arguments - max tasks per wave (default 10)
 MAX_TASKS_PER_WAVE="${1:-10}"
 
@@ -18,7 +20,12 @@ fi
 STATE_FILE="/tmp/.prd_state"
 PLAN_FILE="/tmp/.prd_unblock_plan.json"
 OUTPUT_FILE="/tmp/.prd_unblock_build.json"
-PRD_BASE="${WORKSPACE_DIR:-/workspaces/bankjet}/claude_files/PRDs"
+if [ -z "${WORKSPACE_DIR:-}" ]; then
+    echo '{"status":"error","error":"WORKSPACE_DIR environment variable is not set"}'
+    exit 1
+fi
+
+PRD_BASE="${WORKSPACE_DIR}/claude_files/PRDs"
 
 # Read state
 if [ ! -f "$STATE_FILE" ]; then
@@ -81,12 +88,19 @@ if [ "$(jq 'length' /tmp/.prd_resolution_tasks.json)" -eq 0 ]; then
     exit 1
 fi
 
+# Fallback tier/version for a resolution task that carries neither — from
+# prd-models.json (role: unblock-task), not a literal.
+DEFAULT_TIER=$(bash "$SCRIPT_DIR/prd-model.sh" role-tier unblock-task)
+DEFAULT_MODEL=$(bash "$SCRIPT_DIR/prd-model.sh" role unblock-task)
+
 # Compute waves using Python (topological sort + wave splitting)
 python3 << PYEOF > /tmp/.prd_unblock_waves.json
 import json
 
 MAX_TASKS_PER_WAVE = $MAX_TASKS_PER_WAVE
 CURRENT_PHASE = "$CURRENT_PHASE"
+DEFAULT_TIER = "$DEFAULT_TIER"
+DEFAULT_MODEL = "$DEFAULT_MODEL"
 
 with open('/tmp/.prd_resolution_tasks.json') as f:
     tasks = json.load(f)
@@ -143,7 +157,8 @@ for wave_id, wave_tasks in enumerate(waves):
             'taskId': task['taskId'],
             'taskName': task.get('taskName', ''),
             'taskType': task.get('taskType', ''),
-            'model': task.get('model', 'haiku'),
+            'modelTier': task.get('modelTier', DEFAULT_TIER),
+            'model': task.get('model') or DEFAULT_MODEL,
             'originalBlockedTask': task.get('originalBlockedTask', ''),
             'resolution': task.get('resolution', ''),
             'targetFiles': task.get('targetFiles', []),
@@ -205,6 +220,7 @@ for ((w=0; w<wave_count; w++)); do
         task_name=$(echo "$agent" | jq -r '.taskName')
         task_type=$(echo "$agent" | jq -r '.taskType')
         model=$(echo "$agent" | jq -r '.model')
+        model_tier=$(echo "$agent" | jq -r '.modelTier // ""')
         original_task=$(echo "$agent" | jq -r '.originalBlockedTask')
         resolution=$(echo "$agent" | jq -r '.resolution')
         worktree=$(echo "$agent" | jq -r '.worktree // empty')
@@ -407,6 +423,7 @@ PROMPT_EOF2
             --arg taskId "$task_id" \
             --arg taskName "$task_name" \
             --argjson taskIds "$task_ids_array" \
+            --arg modelTier "$model_tier" \
             --arg model "$model" \
             --arg worktree "$worktree" \
             --arg branch "$branch" \
@@ -419,6 +436,7 @@ PROMPT_EOF2
                 taskId: $taskId,
                 taskName: $taskName,
                 taskIds: $taskIds,
+                modelTier: $modelTier,
                 model: $model,
                 worktree: (if $worktree == "" then null else $worktree end),
                 branch: (if $branch == "" then null else $branch end),

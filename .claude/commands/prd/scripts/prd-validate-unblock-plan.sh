@@ -75,10 +75,19 @@ if jq -e '.resolutionTasks | type == "array"' "$PLAN_FILE" | grep -q true; then
       ERRORS+=("resolutionTasks[$i]: 'dependsOn' must be array (can be empty [])")
     fi
 
-    # Validate model value
-    MODEL=$(jq -r ".resolutionTasks[$i].model // \"\"" "$PLAN_FILE")
-    if [[ -n "$MODEL" && "$MODEL" != "haiku" && "$MODEL" != "sonnet" && "$MODEL" != "opus" ]]; then
-      ERRORS+=("resolutionTasks[$i]: model must be 'haiku', 'sonnet', or 'opus', got '$MODEL'")
+    # Validate the tier alias, not the model string. `model` now carries the
+    # concrete version resolved from prd-models.json (e.g. claude-sonnet-5[1m]),
+    # so the old haiku|sonnet|opus check belongs on modelTier instead. A plan
+    # that predates modelTier falls back to checking model against the aliases.
+    MODEL_TIER=$(jq -r ".resolutionTasks[$i].modelTier // \"\"" "$PLAN_FILE")
+    if [[ -z "$MODEL_TIER" ]]; then
+      MODEL=$(jq -r ".resolutionTasks[$i].model // \"\"" "$PLAN_FILE")
+      case "$MODEL" in
+        ""|haiku|sonnet|opus|claude-*) ;;
+        *) ERRORS+=("resolutionTasks[$i]: model must be a tier alias or a claude-* version, got '$MODEL'") ;;
+      esac
+    elif [[ "$MODEL_TIER" != "haiku" && "$MODEL_TIER" != "sonnet" && "$MODEL_TIER" != "opus" ]]; then
+      ERRORS+=("resolutionTasks[$i]: modelTier must be 'haiku', 'sonnet', or 'opus', got '$MODEL_TIER'")
     fi
 
     # Validate taskId format (UNBLOCK-X.Y or RETRY-X.Y)

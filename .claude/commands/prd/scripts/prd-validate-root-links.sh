@@ -6,7 +6,12 @@
 set -e
 
 PRD_NAME="${1:-}"
-PRD_BASE="${WORKSPACE_DIR:-/workspaces/bankjet}/claude_files/PRDs"
+if [ -z "${WORKSPACE_DIR:-}" ]; then
+    echo '{"status":"error","error":"WORKSPACE_DIR environment variable is not set"}'
+    exit 1
+fi
+
+PRD_BASE="${WORKSPACE_DIR}/claude_files/PRDs"
 
 if [ -z "$PRD_NAME" ]; then
     # Try to read from state

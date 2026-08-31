@@ -176,7 +176,7 @@ After generating each phase file, validate:
 
 ```bash
 for phase_file in claude_files/PRDs/[directory_name]/phase_*.json; do
-  bash /tmp/claude-shared/commands/prd/scripts/prd-validate-phase.sh "$phase_file"
+  bash "$WORKSPACE_DIR/.claude/commands/prd/scripts/prd-validate-phase.sh" "$phase_file"
 done
 ```
 

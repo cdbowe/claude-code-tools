@@ -74,12 +74,12 @@ Extract:
 | `read` | `prd-read.sh` | script |
 | `summarize` | `prd-summarize.sh` + LLM summary | script+inline |
 | `plan` | `prd-plan-inject.sh` (UserPromptSubmit hook, stdout) | hook (no action) |
-| `plan-unblock` | `prd-unblock` agent + display script | agent+script |
+| `plan-unblock` | `prd-unblock-v2` agent + display script | agent+script |
 | `build [phase]` | (optional) read+plan, then compile + workers + finalize + display | hybrid |
 | `unblock` | compile script + workers + finalize script + display script | hybrid |
-| `gen` | `prd-gen` agent + display script | agent+script |
-| `edit` | `prd-edit` agent + validate + display script | agent+script |
-| `review` | `prd-reviewer` agent + validate + display script | agent+script |
+| `gen` | `prd-gen-v2` agent + display script | agent+script |
+| `edit` | `prd-edit-v2` agent + validate + display script | agent+script |
+| `review` | `prd-reviewer-v2` agent + validate + display script | agent+script |
 | `review-all` | compile + parallel reviewers + aggregate + apply + display | hybrid |
 
 ---
@@ -403,7 +403,6 @@ If NO PHASE_NUM provided:
 
          Task(
            subagent_type: "prd-build-reviewer",
-           model: $SONNET_MODEL,
            prompt: "Read and execute the instructions at $promptFile",
            run_in_background: true
          )
@@ -548,7 +547,7 @@ If NO PHASE_NUM provided:
 
 4. Spawn agent (capture JSON output):
    ```
-   Task(subagent_type: "prd-unblock", model: claude-sonnet-4-5-20250929, prompt: "Read instructions from /tmp/.prd_unblock_prompt.txt")
+   Task(subagent_type: "prd-unblock-v2", model: claude-sonnet-4-5-20250929, prompt: "Read instructions from /tmp/.prd_unblock_prompt.txt")
    ```
 
 5. Parse JSON. If `status == "error"`: Output error and STOP
@@ -584,9 +583,9 @@ If PHASE_NUM is provided (e.g., `/prd unblock 3`), run combined `read` → `plan
 
    c. **Run plan-unblock** (only if fast plan returned `needs_agent`):
       - Build agent prompt (same as `plan-unblock` step 3)
-      - Spawn prd-unblock agent:
+      - Spawn prd-unblock-v2 agent:
         ```
-        Task(subagent_type: "prd-unblock", model: claude-sonnet-4-5-20250929, prompt: "Read instructions from /tmp/.prd_unblock_prompt.txt")
+        Task(subagent_type: "prd-unblock-v2", model: claude-sonnet-4-5-20250929, prompt: "Read instructions from /tmp/.prd_unblock_prompt.txt")
         ```
       - Parse JSON. If `status == "error"`: Output error and STOP
       - If `blockedCount == 0`: Output "No blocked tasks in phase" — STOP
@@ -726,7 +725,7 @@ If NO PHASE_NUM provided, proceed directly to step 1 (expects existing plan).
 
 ### `gen`
 
-1. Spawn agent: `Task(subagent_type: "prd-gen", model: !`echo $OPUS_MODEL`, prompt: "...")`
+1. Spawn agent: `Task(subagent_type: "prd-gen-v2", prompt: "...")`
 
 2. Parse JSON output. Extract `prdName` from response.
 
@@ -756,7 +755,7 @@ If NO PHASE_NUM provided, proceed directly to step 1 (expects existing plan).
 
 1. Check ACTIVE_PRD. If missing: Output error — STOP
 
-2. Spawn agent: `Task(subagent_type: "prd-edit", model: claude-sonnet-4-5-20250929, prompt: "...")`
+2. Spawn agent: `Task(subagent_type: "prd-edit-v2", model: claude-sonnet-4-5-20250929, prompt: "...")`
    Agent writes results to `/tmp/.prd_edit.json`
 
 3. Validate: `!`echo $WORKSPACE_DIR/.claude/commands/prd/scripts`/prd-validate.sh /tmp/.prd_edit.json edit`
@@ -774,7 +773,7 @@ If NO PHASE_NUM provided, proceed directly to step 1 (expects existing plan).
 
 2. If no PHASE_NUM provided: Output `Phase number required. Usage: /prd review <phase>` — STOP
 
-3. Spawn agent: `Task(subagent_type: "prd-reviewer", model: !`echo $OPUS_MODEL`, prompt: "Review phase [PHASE_NUM] of PRD [ACTIVE_PRD]")`
+3. Spawn agent: `Task(subagent_type: "prd-reviewer-v2", prompt: "Review phase [PHASE_NUM] of PRD [ACTIVE_PRD]")`
    Agent writes results to `/tmp/.prd_review.json`
 
 4. Validate: `!`echo $WORKSPACE_DIR/.claude/commands/prd/scripts`/prd-validate.sh /tmp/.prd_review.json review`
@@ -846,7 +845,7 @@ If NO PHASE_NUM provided, proceed directly to step 1 (expects existing plan).
 
          # Launch with minimal prompt
          Task(
-           subagent_type: "prd-reviewer",
+           subagent_type: "prd-reviewer-v2",
            model: agent.model,
            prompt: "Read and execute the instructions at /tmp/.prd_agent_[agentId]_prompt.md",
            run_in_background: true

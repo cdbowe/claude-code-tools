@@ -8,8 +8,16 @@
 #   0 - Allow write (validation passed or not a PRD file)
 #   2 - Block write (validation failed)
 
-SCRIPTS_DIR="/tmp/claude-shared/commands/prd/scripts"
-PRD_BASE="${WORKSPACE_DIR:-/workspaces/bankjet}/claude_files/PRDs"
+# Resolve the installed scripts dir. PRD_SCRIPTS_DIR overrides for non-standard
+# layouts; otherwise the scripts sit beside this hook under the same .claude dir.
+SCRIPTS_DIR="${PRD_SCRIPTS_DIR:-${WORKSPACE_DIR}/.claude/commands/prd/scripts}"
+PRD_BASE="${WORKSPACE_DIR}/claude_files/PRDs"
+
+# A PreToolUse validator must never block writes because its own environment is
+# missing — pass through and let prd-doctor.sh report the misconfiguration.
+if [ -z "${WORKSPACE_DIR:-}" ] || [ ! -d "$SCRIPTS_DIR" ]; then
+    exit 0
+fi
 
 # Read hook input from stdin
 INPUT=$(cat)

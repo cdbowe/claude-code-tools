@@ -10,7 +10,12 @@ set -e
 
 STATE_FILE="/tmp/.prd_state"
 SUMMARY_FILE="/tmp/.prd_context_summary"
-PRD_BASE="${WORKSPACE_DIR:-/workspaces/bankjet}/claude_files/PRDs"
+if [ -z "${WORKSPACE_DIR:-}" ]; then
+    echo '{"status":"error","error":"WORKSPACE_DIR environment variable is not set"}'
+    exit 1
+fi
+
+PRD_BASE="${WORKSPACE_DIR}/claude_files/PRDs"
 
 SEARCH_TEXT="${1:-}"
 

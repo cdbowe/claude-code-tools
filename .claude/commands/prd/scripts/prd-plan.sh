@@ -4,6 +4,8 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Parse arguments - max tasks per wave (default 10)
 MAX_TASKS_PER_WAVE="${1:-10}"
 
@@ -42,24 +44,28 @@ PHASE_NAME=$(jq -r '.phaseName // .name // "Unknown"' "$PHASE_JSON_FILE")
 # Get all tasks with status for dependency checking
 jq '.tasks | map({taskId: .taskId, taskStatus: .taskStatus})' "$PHASE_JSON_FILE" > /tmp/.prd_all_task_statuses.json
 
+# Task type -> tier -> concrete model version. The mapping and the versions both
+# live in prd-models.json so there is one place to change either; `modelTier`
+# keeps the alias for validation and display, `model` carries the exact version
+# that reaches Task(model: ...).
+MODELS_JSON=$(bash "$SCRIPT_DIR/prd-model.sh" --json)
+
 # Get pending tasks with model assignment and write to temp file
-jq '
+jq --argjson models "$MODELS_JSON" '
   [.tasks[] | select(.taskStatus == "Pending")] |
-  map({
-    taskId: .taskId,
-    taskName: .taskName,
-    taskType: .taskType,
-    dependsOn: (.dependsOn // []),
-    targetFiles: (.targetFiles // []),
-    modifiedFiles: (.modifiedFiles // []),
-    model: (
-      if .taskType == "generate-test" then "sonnet"
-      elif .taskType == "create-file" then "sonnet"
-      elif .taskType == "verify" then "sonnet"
-      else "haiku"
-      end
-    )
-  })
+  map(
+    ($models.taskTypes[.taskType] // $models.defaultTaskTier) as $tier |
+    {
+      taskId: .taskId,
+      taskName: .taskName,
+      taskType: .taskType,
+      dependsOn: (.dependsOn // []),
+      targetFiles: (.targetFiles // []),
+      modifiedFiles: (.modifiedFiles // []),
+      modelTier: $tier,
+      model: ($models.tiers[$tier])
+    }
+  )
 ' "$PHASE_JSON_FILE" > /tmp/.prd_pending_tasks.json
 
 PENDING_COUNT=$(jq 'length' /tmp/.prd_pending_tasks.json)

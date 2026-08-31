@@ -186,7 +186,7 @@ Write results to `/tmp/.prd_edit.json`:
 
 Run validation:
 ```bash
-bash /tmp/claude-shared/commands/prd/scripts/prd-validate.sh /tmp/.prd_edit.json edit
+bash "$WORKSPACE_DIR/.claude/commands/prd/scripts/prd-validate.sh" /tmp/.prd_edit.json edit
 ```
 
 If validation fails, fix the JSON and re-validate.

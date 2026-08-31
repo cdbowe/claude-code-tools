@@ -23,6 +23,10 @@ ENV DEVCONTAINER=true
 ######################
 # System Packages
 ######################
+# jq and python3 are hard runtime dependencies of the /prd command set:
+# every script parses JSON with jq, and prd-plan.sh / prd-unblock-compile.sh
+# shell out to python3 for topological sort and wave splitting.
+# prd-doctor.sh fails loudly if either is missing.
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
   git \
@@ -32,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   gnupg2 \
   sudo \
   jq \
+  python3 \
   bc \
   less \
   procps \
