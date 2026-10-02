@@ -3,11 +3,11 @@
     "DISABLE_AUTOUPDATER": "1",
     "ENABLE_TOOL_SEARCH": "true",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "95",
-    "ANTHROPIC_MODEL": "claude-opus-5[1m]",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-5[1m]",
-    "ANTHROPIC_CUSTOM_MODEL_OPTION": "claude-opus-4-6[1m]",
-    "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": "Opus 4.6 [1M] [CUSTOM]",
-    "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION": "[CUSTOM] Opus 4.6 (1M Context) - Pinned"
+    "ANTHROPIC_MODEL": "claude-opus-5-5[1m]",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-5-5[1m]",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION": "claude-opus-5[1m]",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": "Opus 5 [1M] [CUSTOM]",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION": "[CUSTOM] Opus 5 (1M Context) - Pinned"
   },
   "permissions": {
     "allow": [
