@@ -68,6 +68,7 @@ fi
 
 # Parse JSON fields (shared across all functions)
 MODEL=$(echo "$JSON_INPUT" | jq -r '.model.display_name // "unknown"')
+EFFORT_LEVEL=$(echo "$JSON_INPUT" | jq -r '.effort.level // "unknown"')
 TRANSCRIPT_PATH=$(echo "$JSON_INPUT" | jq -r '.transcript_path // "unknown"')
 SESSION_ID=$(echo "$JSON_INPUT" | jq -r '.session_id // "unknown"')
 CURRENT_DIR=$(echo "$JSON_INPUT" | jq -r '.workspace.current_dir // "unknown"')
@@ -136,7 +137,7 @@ build_progress_bar() {
 
 # Function: Get model display name
 get_model_element() {
-    echo -e "${COLOR_MODEL}${MODEL}${COLOR_RESET}"
+    echo -e "${COLOR_MODEL}${MODEL} [${EFFORT_LEVEL}]${COLOR_RESET}"
 }
 
 # Function: Get current directory
